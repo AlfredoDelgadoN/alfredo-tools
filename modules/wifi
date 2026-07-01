@@ -1,0 +1,57 @@
+#!/bin/bash
+
+clear
+
+echo "========================================="
+echo "        Alfredo Tools - WiFi"
+echo "========================================="
+echo
+
+IFACE=$(iw dev | awk '$1=="Interface"{print $2}')
+
+if [ -z "$IFACE" ]; then
+    echo "No se encontró interfaz WiFi."
+    exit 1
+fi
+
+echo "Interfaz : $IFACE"
+
+SSID=$(iw dev "$IFACE" link | awk -F': ' '/SSID/ {print $2}')
+BSSID=$(iw dev "$IFACE" link | awk '/Connected to/ {print $3}')
+SIGNAL=$(iw dev "$IFACE" link | awk '/signal/ {print $2,$3}')
+FREQ=$(iw dev "$IFACE" link | awk '/freq/ {print $2}')
+RX=$(iw dev "$IFACE" link | awk -F': ' '/rx bitrate/ {print $2}')
+TX=$(iw dev "$IFACE" link | awk -F': ' '/tx bitrate/ {print $2}')
+IP=$(ip -4 addr show "$IFACE" | awk '/inet /{print $2}')
+GW=$(ip route | awk '/default/ {print $3}')
+
+echo
+echo "SSID      : $SSID"
+echo "BSSID     : $BSSID"
+echo "Señal     : $SIGNAL"
+echo "Frecuencia: $FREQ MHz"
+echo "RX        : $RX"
+echo "TX        : $TX"
+echo "IP        : $IP"
+echo "Gateway   : $GW"
+
+echo
+echo "Probando Internet..."
+
+if ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1; then
+    echo "Internet  : OK"
+else
+    echo "Internet  : ERROR"
+fi
+
+echo
+echo "Probando DNS..."
+
+if ping -c 1 -W 2 google.com >/dev/null 2>&1; then
+    echo "DNS       : OK"
+else
+    echo "DNS       : ERROR"
+fi
+
+echo
+echo "========================================="

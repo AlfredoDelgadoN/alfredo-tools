@@ -7,7 +7,12 @@ case "$1" in
     salud)
         bash modules/salud.sh
         ;;
-
+    wifi)
+        modules/wifi
+        ;;
+    discos)
+        modules/discos
+        ;;
     --version|-v)
         echo "Alfredo Tools $VERSION"
         ;;
@@ -20,7 +25,7 @@ case "$1" in
         echo
         echo "Uso:"
         echo
-        echo "  alfredo salud"
+        echo "  alfredo {salud|wifi|discos}"
         echo
         echo "Opciones:"
         echo
