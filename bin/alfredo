@@ -1,0 +1,31 @@
+#!/bin/bash
+
+VERSION="0.1.0"
+
+case "$1" in
+
+    salud)
+        bash modules/salud.sh
+        ;;
+
+    --version|-v)
+        echo "Alfredo Tools $VERSION"
+        ;;
+
+    --help|-h|"")
+        echo
+        echo "========================================="
+        echo "        Alfredo Tools $VERSION"
+        echo "========================================="
+        echo
+        echo "Uso:"
+        echo
+        echo "  alfredo salud"
+        echo
+        echo "Opciones:"
+        echo
+        echo "  --help"
+        echo "  --version"
+        echo
+        ;;
+esac
