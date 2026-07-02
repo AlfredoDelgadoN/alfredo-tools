@@ -1,0 +1,323 @@
+#!/bin/bash
+
+# Determinar la ruta base
+if [ -n "$ALFREDO_BASE" ]; then
+    BASE="$ALFREDO_BASE"
+else
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    BASE="$(cd "$SCRIPT_DIR/.." && pwd)"
+fi
+
+source "$BASE/lib/ui"
+
+title "Alfredo Tools - Diagnóstico del Sistema"
+
+# Colores para estado
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+# Variables para almacenar problemas
+PROBLEMAS=()
+SOLUCIONES=()
+GRAVEDAD=()
+
+# Función para agregar problema
+agregar_problema() {
+    local problema="$1"
+    local solucion="$2"
+    local gravedad="$3"  # CRITICAL, HIGH, MEDIUM, LOW
+    
+    PROBLEMAS+=("$problema")
+    SOLUCIONES+=("$solucion")
+    GRAVEDAD+=("$gravedad")
+}
+
+# Función para mostrar estado
+mostrar_estado() {
+    local status="$1"
+    local msg="$2"
+    case $status in
+        OK)
+            echo -e "  ${GREEN}✅${NC} $msg"
+            ;;
+        WARN)
+            echo -e "  ${YELLOW}⚠️${NC} $msg"
+            ;;
+        ERROR)
+            echo -e "  ${RED}❌${NC} $msg"
+            ;;
+    esac
+}
+
+echo -e "${BLUE}🔍 Escaneando el sistema en busca de problemas...${RESET}"
+separator
+echo
+
+# ============================================
+# 1. DIAGNÓSTICO DE PANTALLAS / GRÁFICOS
+# ============================================
+echo -e "${BOLD}${CYAN}🖥️  DIAGNÓSTICO DE PANTALLAS Y GRÁFICOS${RESET}"
+separator
+
+# Detectar monitores conectados
+echo "📺 Monitores detectados:"
+MONITORES=$(xrandr --listmonitors 2>/dev/null | tail -n +2)
+if [ -n "$MONITORES" ]; then
+    echo "$MONITORES" | while read line; do
+        echo "  $line"
+    done
+else
+    echo "  ⚠️ No se pudo detectar monitores (xrandr no disponible)"
+fi
+echo
+
+# Problema: Pantalla negra intermitente
+echo "🔍 Verificando problemas de pantalla negra:"
+
+# Verificar logs de Xorg
+if [ -f /var/log/Xorg.0.log ]; then
+    ERRORES_XORG=$(grep -i "EE\|error\|fail\|crash" /var/log/Xorg.0.log | tail -5)
+    if [ -n "$ERRORES_XORG" ]; then
+        mostrar_estado "ERROR" "Errores encontrados en Xorg:"
+        echo "$ERRORES_XORG" | sed 's/^/    /'
+        agregar_problema \
+            "Errores en Xorg (pantalla negra intermitente)" \
+            "1. Reiniciar el servidor gráfico: sudo systemctl restart display-manager\n   2. Reinstalar drivers gráficos: sudo ubuntu-drivers autoinstall\n   3. Verificar configuración: sudo dpkg-reconfigure xserver-xorg" \
+            "CRITICAL"
+    else
+        mostrar_estado "OK" "Sin errores críticos en Xorg"
+    fi
+else
+    echo "  ℹ️ No se encontró /var/log/Xorg.0.log"
+fi
+
+# Verificar drivers gráficos
+echo
+echo "🔍 Verificando drivers gráficos:"
+if command -v nvidia-smi &>/dev/null; then
+    echo "  ✅ NVIDIA drivers detectados"
+    DRIVER_INFO=$(nvidia-smi --query-gpu=driver_version,temperature.gpu --format=csv,noheader)
+    echo "    Version: $(echo $DRIVER_INFO | cut -d',' -f1)"
+    echo "    Temp: $(echo $DRIVER_INFO | cut -d',' -f2)"
+elif command -v glxinfo &>/dev/null; then
+    GLX_INFO=$(glxinfo | grep "OpenGL renderer" | head -1)
+    if echo "$GLX_INFO" | grep -q "NVIDIA\|AMD\|Intel"; then
+        echo "  ✅ GPU detectada: $GLX_INFO"
+    else
+        mostrar_estado "WARN" "GPU no detectada correctamente"
+        agregar_problema \
+            "GPU no detectada correctamente" \
+            "1. Instalar drivers: sudo apt install mesa-utils\n   2. Verificar GPU: lspci | grep VGA\n   3. Reinstalar drivers: sudo apt install --reinstall xserver-xorg-video-intel" \
+            "HIGH"
+    fi
+else
+    echo "  ⚠️ No se puede verificar drivers (glxinfo no instalado)"
+fi
+
+# Problema: Resolución incorrecta
+CURRENT_RES=$(xrandr 2>/dev/null | grep "*" | head -1 | awk '{print $1}')
+if [ -n "$CURRENT_RES" ]; then
+    echo "  📐 Resolución actual: $CURRENT_RES"
+    
+    # Verificar si la resolución es baja
+    if echo "$CURRENT_RES" | grep -q "1024x768\|800x600\|640x480"; then
+        mostrar_estado "WARN" "Resolución baja detectada: $CURRENT_RES"
+        agregar_problema \
+            "Resolución de pantalla baja ($CURRENT_RES)" \
+            "1. Ajustar resolución: xrandr --output eDP-1 --mode 1920x1080\n   2. Ver monitores disponibles: xrandr\n   3. Configurar en: Configuración del Sistema > Pantallas" \
+            "MEDIUM"
+    else
+        mostrar_estado "OK" "Resolución adecuada: $CURRENT_RES"
+    fi
+fi
+
+# ============================================
+# 2. DIAGNÓSTICO DE MEMORIA
+# ============================================
+echo
+echo -e "${BOLD}${CYAN}💾 DIAGNÓSTICO DE MEMORIA${RESET}"
+separator
+
+MEM_TOTAL=$(free -g | awk '/Mem:/ {print $2}')
+MEM_USADO=$(free -g | awk '/Mem:/ {print $3}')
+MEM_PORCENTAJE=$((MEM_USADO * 100 / MEM_TOTAL))
+
+echo "  💻 Memoria total: ${MEM_TOTAL}GB"
+echo "  📊 Memoria usada: ${MEM_USADO}GB (${MEM_PORCENTAJE}%)"
+
+if [ $MEM_PORCENTAJE -gt 90 ]; then
+    mostrar_estado "ERROR" "Memoria crítica: $MEM_PORCENTAJE% usada"
+    agregar_problema \
+        "Alto uso de memoria (${MEM_PORCENTAJE}%)" \
+        "1. Ver procesos que más consumen: ps aux --sort=-%mem | head -10\n   2. Cerrar aplicaciones no utilizadas\n   3. Aumentar swap: sudo dd if=/dev/zero of=/swapfile bs=1G count=4 && sudo mkswap /swapfile && sudo swapon /swapfile" \
+        "CRITICAL"
+elif [ $MEM_PORCENTAJE -gt 70 ]; then
+    mostrar_estado "WARN" "Uso de memoria alto: $MEM_PORCENTAJE%"
+    agregar_problema \
+        "Uso de memoria alto (${MEM_PORCENTAJE}%)" \
+        "1. Cerrar navegadores con muchas pestañas\n   2. Verificar aplicaciones en background\n   3. Considerar aumentar RAM" \
+        "MEDIUM"
+else
+    mostrar_estado "OK" "Uso de memoria normal: $MEM_PORCENTAJE%"
+fi
+
+# ============================================
+# 3. DIAGNÓSTICO DE CPU Y TEMPERATURA
+# ============================================
+echo
+echo -e "${BOLD}${CYAN}🌡️  DIAGNÓSTICO DE CPU Y TEMPERATURA${RESET}"
+separator
+
+# Carga de CPU
+LOAD=$(uptime | awk -F'load average:' '{print $2}' | awk '{print $1}' | sed 's/,//')
+CPU_CORES=$(nproc)
+LOAD_PORCENTAJE=$(echo "scale=0; $LOAD * 100 / $CPU_CORES" | bc 2>/dev/null || echo "0")
+
+echo "  🔢 Núcleos: $CPU_CORES"
+echo "  📊 Carga promedio: $LOAD (${LOAD_PORCENTAJE}%)"
+
+if [ ${LOAD_PORCENTAJE%.*} -gt 80 ] 2>/dev/null; then
+    mostrar_estado "ERROR" "Carga de CPU muy alta: ${LOAD_PORCENTAJE}%"
+    agregar_problema \
+        "Alta carga de CPU (${LOAD_PORCENTAJE}%)" \
+        "1. Ver procesos que más consumen: ps aux --sort=-%cpu | head -10\n   2. Identificar procesos anormales\n   3. Considerar actualizar hardware" \
+        "HIGH"
+elif [ ${LOAD_PORCENTAJE%.*} -gt 60 ] 2>/dev/null; then
+    mostrar_estado "WARN" "Carga de CPU alta: ${LOAD_PORCENTAJE}%"
+else
+    mostrar_estado "OK" "Carga de CPU normal"
+fi
+
+# Temperatura
+if command -v sensors &>/dev/null; then
+    TEMP=$(sensors | grep -i "core\|temp" | head -1 | awk '{print $2}' | sed 's/[^0-9.]//g')
+    if [ -n "$TEMP" ]; then
+        echo "  🌡️  Temperatura: ${TEMP}°C"
+        if [ ${TEMP%.*} -gt 85 ] 2>/dev/null; then
+            mostrar_estado "ERROR" "Temperatura crítica: ${TEMP}°C"
+            agregar_problema \
+                "Sobrecalentamiento (${TEMP}°C)" \
+                "1. Limpiar ventiladores y disipadores\n   2. Verificar pasta térmica\n   3. Mejorar ventilación" \
+                "CRITICAL"
+        elif [ ${TEMP%.*} -gt 75 ] 2>/dev/null; then
+            mostrar_estado "WARN" "Temperatura alta: ${TEMP}°C"
+        else
+            mostrar_estado "OK" "Temperatura normal"
+        fi
+    fi
+else
+    echo "  ⚠️ No se puede medir temperatura (lm-sensors no instalado)"
+    echo "    Instalar con: sudo apt install lm-sensors && sudo sensors-detect"
+fi
+
+# ============================================
+# 4. DIAGNÓSTICO DE DISCOS
+# ============================================
+echo
+echo -e "${BOLD}${CYAN}💿 DIAGNÓSTICO DE DISCOS${RESET}"
+separator
+
+# Espacio en disco
+echo "📊 Espacio en disco:"
+df -h | grep -E '^/dev/' | while read line; do
+    USO=$(echo "$line" | awk '{print $5}' | sed 's/%//')
+    MONTAJE=$(echo "$line" | awk '{print $6}')
+    if [ $USO -gt 90 ]; then
+        mostrar_estado "ERROR" "$MONTAJE: ${USO}% usado"
+        agregar_problema \
+            "Disco $MONTAJE casi lleno (${USO}%)" \
+            "1. Limpiar caché: sudo apt clean && sudo apt autoremove\n   2. Eliminar archivos temporales: sudo rm -rf /tmp/*\n   3. Usar: ncdu / para analizar uso" \
+            "HIGH"
+    elif [ $USO -gt 75 ]; then
+        mostrar_estado "WARN" "$MONTAJE: ${USO}% usado"
+    else
+        mostrar_estado "OK" "$MONTAJE: ${USO}% usado"
+    fi
+done
+
+# ============================================
+# 5. DIAGNÓSTICO DE PROCESOS CONGELADOS
+# ============================================
+echo
+echo -e "${BOLD}${CYAN}🔄 PROCESOS PROBLEMÁTICOS${RESET}"
+separator
+
+PROCESOS_CONGELADOS=$(ps aux | awk '$8~"D" {print $2, $11}' | head -5)
+if [ -n "$PROCESOS_CONGELADOS" ]; then
+    mostrar_estado "WARN" "Procesos en estado 'D' (congelados) detectados:"
+    echo "$PROCESOS_CONGELADOS" | while read pid cmd; do
+        echo "    PID $pid: $cmd"
+    done
+    agregar_problema \
+        "Procesos congelados detectados" \
+        "1. Identificar proceso: ps aux | grep -E 'D '\n   2. Matar proceso: sudo kill -9 PID\n   3. Si es crítico, reiniciar servicio" \
+        "HIGH"
+else
+    mostrar_estado "OK" "No hay procesos congelados"
+fi
+
+# ============================================
+# 6. DIAGNÓSTICO DE RED
+# ============================================
+echo
+echo -e "${BOLD}${CYAN}🌐 DIAGNÓSTICO DE RED${RESET}"
+separator
+
+# Verificar conectividad
+if ping -c 2 -W 2 8.8.8.8 >/dev/null 2>&1; then
+    mostrar_estado "OK" "Conexión a Internet OK"
+else
+    mostrar_estado "ERROR" "Sin conexión a Internet"
+    agregar_problema \
+        "Sin conexión a Internet" \
+        "1. Verificar cable/WiFi\n   2. Reiniciar router\n   3. Verificar DNS: echo 'nameserver 8.8.8.8' | sudo tee /etc/resolv.conf" \
+        "CRITICAL"
+fi
+
+# ============================================
+# RESUMEN DE PROBLEMAS
+# ============================================
+echo
+echo -e "${BOLD}${CYAN}📋 RESUMEN DE PROBLEMAS ENCONTRADOS${RESET}"
+separator
+
+if [ ${#PROBLEMAS[@]} -eq 0 ]; then
+    echo -e "${GREEN}✅ ¡No se encontraron problemas! El sistema funciona correctamente.${NC}"
+else
+    echo -e "${YELLOW}⚠️ Se encontraron ${#PROBLEMAS[@]} problema(s):${NC}"
+    echo
+    
+    for i in "${!PROBLEMAS[@]}"; do
+        # Color según gravedad
+        case "${GRAVEDAD[$i]}" in
+            CRITICAL) COLOR="${RED}"; ICON="🔴" ;;
+            HIGH)     COLOR="${RED}"; ICON="🟠" ;;
+            MEDIUM)   COLOR="${YELLOW}"; ICON="🟡" ;;
+            LOW)      COLOR="${BLUE}"; ICON="🔵" ;;
+        esac
+        
+        echo -e "${COLOR}${ICON} ${PROBLEMAS[$i]}${NC}"
+        echo -e "   ${BLUE}💡 Solución sugerida:${NC}"
+        echo -e "${SOLUCIONES[$i]}" | sed 's/^/     /'
+        echo
+    done
+    
+    echo -e "${BOLD}${YELLOW}📌 RECOMENDACIONES GENERALES:${NC}"
+    echo "  • Si la pantalla se pone negra, intenta: Ctrl+Alt+F1 (tty) y luego Ctrl+Alt+F7"
+    echo "  • Reiniciar el servidor gráfico: sudo systemctl restart gdm3 (o lightdm/display-manager)"
+    echo "  • Verificar logs: journalctl -xe | grep -i error | tail -20"
+    echo "  • Si el problema persiste, considera actualizar el kernel"
+fi
+
+echo
+echo -e "${BLUE}📊 Acciones recomendadas:${RESET}"
+separator
+echo "  1. Para problemas gráficos: ejecuta 'sudo apt install --reinstall xserver-xorg-video-intel'"
+echo "  2. Para problemas de memoria: 'sudo apt clean && sudo apt autoremove'"
+echo "  3. Para problemas de disco: 'sudo rm -rf ~/.cache/*'"
+echo "  4. Para análisis completo: 'sudo journalctl -p 3 -xb'"
+echo "  5. Para ver logs en tiempo real: 'sudo journalctl -f'"
+
+ok "Diagnóstico completado"

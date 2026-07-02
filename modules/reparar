@@ -1,0 +1,50 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "Alfredo Tools - Reparación Automática"
+
+echo -e "${YELLOW}⚠️  Este script intentará reparar problemas comunes${NC}"
+echo -e "${YELLOW}   Se requiere permisos de superusuario${NC}"
+echo
+read -p "¿Continuar? (s/N) " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Ss]$ ]]; then
+    exit 0
+fi
+
+echo -e "${BLUE}🔧 Ejecutando reparaciones...${RESET}"
+separator
+
+# 1. Reparar paquetes rotos
+echo "📦 Reparando paquetes..."
+sudo apt --fix-broken install -y 2>/dev/null && mostrar_estado "OK" "Paquetes reparados" || mostrar_estado "ERROR" "Error reparando paquetes"
+
+# 2. Limpiar caché
+echo "🧹 Limpiando caché..."
+sudo apt clean 2>/dev/null
+sudo apt autoremove -y 2>/dev/null
+mostrar_estado "OK" "Caché limpiada"
+
+# 3. Reparar dependencias
+echo "🔗 Reparando dependencias..."
+sudo apt install -f -y 2>/dev/null && mostrar_estado "OK" "Dependencias reparadas" || mostrar_estado "ERROR" "Error reparando dependencias"
+
+# 4. Recargar servicios gráficos
+echo "🖥️  Recargando servicios gráficos..."
+sudo systemctl restart display-manager 2>/dev/null && mostrar_estado "OK" "Servicio gráfico reiniciado" || mostrar_estado "WARN" "No se pudo reiniciar display-manager"
+
+# 5. Verificar sistema de archivos
+echo "💿 Verificando sistema de archivos..."
+sudo fsck -Af -M 2>/dev/null && mostrar_estado "OK" "Sistema de archivos verificado" || mostrar_estado "WARN" "Error verificando sistema de archivos"
+
+echo
+ok "Reparaciones completadas"
+echo
+echo "📌 Recomendaciones finales:"
+echo "  1. Reinicia el sistema si los problemas persisten"
+echo "  2. Ejecuta 'alfredo diagnostico' para verificar"
+echo "  3. Si el problema de pantalla negra continúa:"
+echo "     - Verifica cables y conexiones"
+echo "     - Actualiza drivers: sudo ubuntu-drivers autoinstall"

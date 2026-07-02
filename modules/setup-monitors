@@ -1,0 +1,55 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🖥️ Configuración de Monitores"
+
+echo "📺 Detectando monitores..."
+separator
+
+# Listar monitores
+xrandr --listmonitors
+
+echo
+echo "Configuraciones disponibles:"
+echo "1) Solo laptop (eDP)"
+echo "2) Solo monitor externo (HDMI)"
+echo "3) Extendido (laptop + monitor externo)"
+echo "4) Duplicado (clonado)"
+echo "5) Auto-detección (recomendado)"
+echo
+read -p "Selecciona una opción (1-5): " OPCION
+
+case $OPCION in
+    1)
+        echo "Configurando solo laptop..."
+        xrandr --output HDMI-A-0 --off --output eDP --auto
+        ok "Configuración aplicada (solo laptop)"
+        ;;
+    2)
+        echo "Configurando solo monitor externo..."
+        xrandr --output eDP --off --output HDMI-A-0 --auto
+        ok "Configuración aplicada (solo HDMI)"
+        ;;
+    3)
+        echo "Configurando modo extendido..."
+        xrandr --output eDP --auto --output HDMI-A-0 --auto --right-of eDP
+        ok "Configuración aplicada (extendido)"
+        ;;
+    4)
+        echo "Configurando modo duplicado..."
+        xrandr --output eDP --auto --output HDMI-A-0 --same-as eDP
+        ok "Configuración aplicada (duplicado)"
+        ;;
+    5)
+        echo "Detectando automáticamente..."
+        xrandr --auto
+        ok "Auto-detección aplicada"
+        ;;
+esac
+
+echo
+echo "💡 Para hacer permanente esta configuración:"
+echo "   Crear archivo: ~/.xprofile con:"
+echo "   xrandr --output eDP --auto --output HDMI-A-0 --auto --right-of eDP"

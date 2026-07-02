@@ -1,0 +1,49 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🔧 Solución Rápida - Pantalla Negra"
+
+echo "🔄 Intentando soluciones en secuencia..."
+separator
+
+# Solución 1: Resetear la configuración de monitores
+echo "1️⃣ Reseteando configuración de monitores..."
+xrandr --auto 2>/dev/null
+sleep 1
+
+# Solución 2: Forzar detección de monitores
+echo "2️⃣ Forzando detección de monitores..."
+xrandr --output HDMI-A-0 --auto 2>/dev/null
+xrandr --output eDP --auto 2>/dev/null
+sleep 1
+
+# Solución 3: Reiniciar compositor
+echo "3️⃣ Reiniciando compositor..."
+if pgrep -x "gnome-shell" >/dev/null; then
+    killall -HUP gnome-shell 2>/dev/null
+    echo "  ✅ Gnome Shell reiniciado"
+elif pgrep -x "compiz" >/dev/null; then
+    killall -HUP compiz 2>/dev/null
+    echo "  ✅ Compiz reiniciado"
+fi
+
+# Solución 4: Si el problema persiste, reiniciar display manager
+echo
+read -p "¿Sigue la pantalla negra? (s/N) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Ss]$ ]]; then
+    echo "4️⃣ Reiniciando display manager..."
+    sudo systemctl restart display-manager
+    echo "  ✅ Display manager reiniciado"
+    echo "  ℹ️ La pantalla parpadeará y volverá a la normalidad"
+fi
+
+echo
+ok "Soluciones aplicadas"
+echo
+echo "📌 Si el problema persiste:"
+echo "  • Desconecta y vuelve a conectar el monitor HDMI"
+echo "  • Ejecuta: alfredo diagnostico"
+echo "  • Prueba: sudo dpkg-reconfigure xserver-xorg"

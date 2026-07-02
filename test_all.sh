@@ -1,6 +1,17 @@
 #!/bin/bash
 
-echo "🧪 Alfredo Tools - Test Suite"
+# Determinar la ruta base
+if [ -n "$ALFREDO_BASE" ]; then
+    BASE="$ALFREDO_BASE"
+else
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    BASE="$(cd "$SCRIPT_DIR/.." && pwd)"
+fi
+
+source "$BASE/lib/ui"
+
+
+title "🧪 Alfredo Tools - Test Suite"
 echo "=============================="
 echo
 

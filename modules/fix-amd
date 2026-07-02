@@ -1,0 +1,62 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🟣 Solución AMD Radeon Vega 8"
+
+echo "🔧 Aplicando soluciones específicas para AMD..."
+separator
+
+# 1. Verificar drivers AMD
+echo "1️⃣ Verificando drivers AMD..."
+if lsmod | grep -q amdgpu; then
+    echo "  ✅ Driver amdgpu cargado"
+else
+    echo "  ❌ Driver amdgpu NO cargado"
+    echo "  Instalando..."
+    sudo modprobe amdgpu
+fi
+
+# 2. Ajustar parámetros del kernel para AMD
+echo
+echo "2️⃣ Optimizando parámetros del kernel..."
+echo "  Añadiendo opciones para amdgpu..."
+echo "  options amdgpu siov=0" | sudo tee /etc/modprobe.d/99-amdgpu-fix.conf
+sudo update-initramfs -u 2>/dev/null
+
+# 3. Configuración de Xorg para AMD
+echo
+echo "3️⃣ Configurando Xorg para AMD..."
+sudo bash -c 'cat > /etc/X11/xorg.conf.d/20-amdgpu.conf << EOF
+Section "Device"
+    Identifier  "AMD Graphics"
+    Driver      "amdgpu"
+    Option      "TearFree" "true"
+    Option      "VariableRefresh" "true"
+    Option      "EnablePageFlip" "false"
+    Option      "AccelMethod" "glamor"
+EndSection
+EOF'
+echo "  ✅ Configuración de Xorg creada"
+
+# 4. Verificar configuración
+echo
+echo "4️⃣ Verificando configuración..."
+if [ -f /etc/X11/xorg.conf.d/20-amdgpu.conf ]; then
+    echo "  ✅ Archivo de configuración creado"
+    cat /etc/X11/xorg.conf.d/20-amdgpu.conf
+fi
+
+echo
+echo "⚠️  Para aplicar los cambios, reinicia el sistema"
+echo "   o ejecuta: sudo systemctl restart display-manager"
+echo
+read -p "¿Reiniciar display-manager ahora? (s/N) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Ss]$ ]]; then
+    sudo systemctl restart display-manager
+    ok "Display-manager reiniciado"
+fi
+
+ok "Soluciones AMD aplicadas"

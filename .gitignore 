@@ -1,0 +1,17 @@
+# Archivos temporales
+*.tmp
+*.log
+*.swp
+*~
+
+# Archivos de configuración personal
+*.conf
+.env
+
+# Archivos de prueba
+test_*
+diagnostico.sh
+
+# Directorios de sistema
+.DS_Store
+Thumbs.db

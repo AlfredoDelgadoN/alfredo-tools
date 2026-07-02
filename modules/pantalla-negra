@@ -1,0 +1,76 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "Alfredo Tools - Solución Pantalla Negra"
+
+echo -e "${YELLOW}🔧 Soluciones para pantalla negra intermitente${NC}"
+echo "=========================================="
+echo
+
+echo "1️⃣  Reiniciar el servidor gráfico (rápido):"
+echo "   sudo systemctl restart display-manager"
+echo
+
+echo "2️⃣  Cambiar a tty y volver (cuando se congela):"
+echo "   Ctrl+Alt+F1 (para entrar a tty1)"
+echo "   Ctrl+Alt+F7 (para volver al entorno gráfico)"
+echo
+
+echo "3️⃣  Reiniciar solo la sesión de X11:"
+echo "   sudo pkill -HUP Xorg"
+echo
+
+echo "4️⃣  Si usas NVIDIA (problemas comunes):"
+echo "   sudo nvidia-smi --reset"
+echo "   sudo nvidia-xconfig"
+echo
+
+echo "5️⃣  Verificar logs en tiempo real:"
+echo "   sudo journalctl -f | grep -i 'error\|fail\|crash'"
+echo
+
+echo -e "${BLUE}📋 ACCIONES RÁPIDAS:${RESET}"
+separator
+
+echo "¿Qué deseas hacer?"
+echo "1) Reiniciar display manager"
+echo "2) Ver logs de error"
+echo "3) Abrir ayuda interactiva"
+echo "4) Salir"
+read -p "Opción (1-4): " OPCION
+
+case $OPCION in
+    1)
+        echo "Reiniciando display manager..."
+        sudo systemctl restart display-manager
+        ok "Display manager reiniciado"
+        ;;
+    2)
+        echo "Mostrando últimos errores:"
+        sudo journalctl -p 3 -xb | tail -20
+        ;;
+    3)
+        echo
+        echo "📖 Guía rápida:"
+        echo "  • Si la pantalla se pone negra al conectar/desconectar monitor:"
+        echo "    xrandr --auto"
+        echo
+        echo "  • Si el mouse se ve pero no los iconos:"
+        echo "    killall -HUP compiz" # para compiz
+        echo "    killall -HUP gnome-shell" # para gnome
+        echo
+        echo "  • Si el problema persiste:"
+        echo "    - Actualizar kernel: sudo apt install linux-generic"
+        echo "    - Reinstalar drivers: sudo ubuntu-drivers autoinstall"
+        echo "    - Backup y reinstalar sistema"
+        ;;
+    4)
+        echo "Saliendo..."
+        exit 0
+        ;;
+esac
+
+echo
+warn "Si el problema persiste, ejecuta: alfredo diagnostico"

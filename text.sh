@@ -12,7 +12,3 @@ for module in salud wifi red speed; do
     echo "---"
     echo
 done
-EOF
-
-chmod +x ~/Documentos/alfredo-tools/test.sh
-~/Documentos/alfredo-tools/test.sh
