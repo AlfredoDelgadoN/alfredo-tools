@@ -1,27 +1,21 @@
 #!/bin/bash
 
-echo
-echo "========================================="
-echo "        Alfredo Tools - Salud"
-echo "========================================="
-echo
+BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-echo "Sistema : $(grep PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '"')"
-echo "Kernel  : $(uname -r)"
-echo "Usuario : $USER"
-echo "Equipo  : $(hostname)"
-echo "Fecha   : $(date)"
+source "$BASE/lib/ui"
+
+title "Alfredo Tools - Speed"
+
+title "Alfredo Tools - Salud"
 
 echo
-echo "Uso del disco raíz"
-
-df -h / | tail -1
+echo "Uso del disco"
+separator
+df -h /
 
 echo
 echo "Memoria"
-
+separator
 free -h
 
-echo
-echo "Estado : OK"
-echo
+ok "Sistema funcionando correctamente"

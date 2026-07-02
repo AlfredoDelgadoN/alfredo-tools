@@ -1,0 +1,48 @@
+#!/bin/bash
+
+GREEN="\e[32m"
+RED="\e[31m"
+YELLOW="\e[33m"
+BLUE="\e[34m"
+CYAN="\e[36m"
+BOLD="\e[1m"
+RESET="\e[0m"
+
+WIDTH=41
+
+line() {
+    printf '=%.0s' $(seq 1 $WIDTH)
+    echo
+}
+
+separator() {
+    printf -- '-%.0s' $(seq 1 $WIDTH)
+    echo
+}
+
+title() {
+    clear
+    line
+    printf "${BOLD}${CYAN}%*s${RESET}\n" \
+        $(( (${#1}+WIDTH)/2 )) "$1"
+    line
+}
+
+field() {
+    printf "${BLUE}%-12s${RESET} : %s\n" "$1" "$2"
+}
+
+ok() {
+    echo
+    echo -e "${GREEN}✔ $1${RESET}"
+}
+
+warn() {
+    echo
+    echo "⚠ $1"
+}
+
+fail() {
+    echo
+    echo "✖ $1"
+}

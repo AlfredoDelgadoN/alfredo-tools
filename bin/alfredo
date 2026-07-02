@@ -1,36 +1,25 @@
 #!/bin/bash
 
-VERSION="0.1.0"
+BASE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 case "$1" in
 
     salud)
-        bash modules/salud.sh
+        "$BASE_DIR/modules/salud"
         ;;
     wifi)
-        modules/wifi
+        "$BASE_DIR/modules/wifi"
         ;;
-    discos)
-        modules/discos
+    red)
+        "$BASE_DIR/modules/red"
         ;;
-    --version|-v)
-        echo "Alfredo Tools $VERSION"
-        ;;
-
-    --help|-h|"")
-        echo
+   *)
         echo "========================================="
-        echo "        Alfredo Tools $VERSION"
+        echo "        Alfredo Tools v0.3"
         echo "========================================="
-        echo
         echo "Uso:"
-        echo
-        echo "  alfredo {salud|wifi|discos}"
-        echo
-        echo "Opciones:"
-        echo
-        echo "  --help"
-        echo "  --version"
-        echo
+        echo "  ./bin/alfredo salud"
+        echo "  ./bin/alfredo wifi"
+        echo "  ./bin/alfredo red"
         ;;
 esac

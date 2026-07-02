@@ -1,0 +1,6 @@
+#!/bin/bash
+
+SYSTEM=$(grep PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '"')
+KERNEL=$(uname -r)
+HOSTNAME=$(hostname)
+USERNAME=$USER

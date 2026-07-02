@@ -1,11 +1,10 @@
 #!/bin/bash
 
-clear
+BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-echo "========================================="
-echo "        Alfredo Tools - WiFi"
-echo "========================================="
-echo
+source "$BASE/lib/ui"
+
+title "WiFi"
 
 IFACE=$(iw dev | awk '$1=="Interface"{print $2}')
 
@@ -39,18 +38,18 @@ echo
 echo "Probando Internet..."
 
 if ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1; then
-    echo "Internet  : OK"
+    ok "Internet  : OK"
 else
-    echo "Internet  : ERROR"
+    error "Internet  : ERROR"
 fi
 
 echo
 echo "Probando DNS..."
 
 if ping -c 1 -W 2 google.com >/dev/null 2>&1; then
-    echo "DNS       : OK"
+    ok "DNS       : OK"
 else
-    echo "DNS       : ERROR"
+    error "DNS       : ERROR"
 fi
 
 echo

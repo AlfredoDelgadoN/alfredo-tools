@@ -1,0 +1,54 @@
+#!/bin/bash
+
+BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+source "$BASE/lib/ui"
+
+title "Red"
+
+# Detectar interfaz activa
+IFACE=$(ip route | awk '/default/ {print $5; exit}')
+
+echo "Interfaz : $IFACE"
+
+IP=$(ip -4 addr show "$IFACE" | grep inet | awk '{print $2}')
+echo "IP       : $IP"
+
+GW=$(ip route | awk '/default/ {print $3; exit}')
+echo "Gateway  : $GW"
+
+DNS=$(resolvectl status | awk '{print $3}' | paste -sd ", " -)
+echo "DNS      : $DNS"
+
+echo
+
+echo "Prueba Gateway"
+
+if ping -c 2 -W 2 "$GW" >/dev/null 2>&1
+then
+    ok "Gateway  : OK"
+else
+    error "Gateway  : ERROR"
+fi
+
+echo
+
+echo "Prueba Internet"
+
+if ping -c 2 -W 2 8.8.8.8 >/dev/null 2>&1
+then
+    ok "Internet : OK"
+else
+    error "Internet : ERROR"
+fi
+
+echo
+
+echo "Prueba DNS"
+
+if ping -c 2 -W 2 google.com >/dev/null 2>&1
+then
+    ok "DNS      : OK"
+else
+    error "DNS      : ERROR"
+fi
