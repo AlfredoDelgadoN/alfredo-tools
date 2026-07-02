@@ -1,25 +1,72 @@
 #!/bin/bash
 
-BASE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# Determinar la ruta base de forma robusta
+# Si se ejecuta desde el enlace simbólico, seguir el enlace
+if [ -L "$0" ]; then
+    # Es un enlace simbólico, obtener la ruta real
+    SCRIPT_PATH="$(readlink -f "$0")"
+else
+    SCRIPT_PATH="$0"
+fi
 
+# Obtener el directorio base
+BIN_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+BASE="$(cd "$BIN_DIR/.." && pwd)"
+
+# Exportar para los módulos
+export ALFREDO_BASE="$BASE"
+
+# Función de ayuda
+show_help() {
+    echo "========================================="
+    echo "          Alfredo Tools v0.5"
+    echo "========================================="
+    echo
+    echo "Uso:"
+    echo "  alfredo salud    - Estado del sistema"
+    echo "  alfredo wifi     - Info WiFi"
+    echo "  alfredo red      - Info de red"
+    echo "  alfredo speed    - Velocidad de Internet"
+    echo "  alfredo help     - Esta ayuda"
+    echo "  alfredo version  - Versión"
+    echo
+}
+
+# Verificar que los módulos existen
+check_module() {
+    local module="$1"
+    local module_path="$BASE/modules/$module"
+    
+    if [ ! -f "$module_path" ]; then
+        echo "❌ Error: Módulo '$module' no encontrado"
+        echo "   Buscando en: $module_path"
+        echo
+        echo "   Verifica que el proyecto esté instalado correctamente"
+        echo "   o ejecuta: cd ~/Documentos/alfredo-tools && ./bin/alfredo"
+        exit 1
+    fi
+    
+    if [ ! -x "$module_path" ]; then
+        echo "⚠️  El módulo '$module' no es ejecutable"
+        echo "   Ejecuta: chmod +x $module_path"
+        exit 1
+    fi
+}
+
+# Casos
 case "$1" in
-
-    salud)
-        "$BASE_DIR/modules/salud"
+    salud|wifi|red|speed)
+        check_module "$1"
+        exec "$BASE/modules/$1"
         ;;
-    wifi)
-        "$BASE_DIR/modules/wifi"
+    help|--help|-h)
+        show_help
         ;;
-    red)
-        "$BASE_DIR/modules/red"
+    version|--version|-v)
+        echo "Alfredo Tools v0.5"
         ;;
-   *)
-        echo "========================================="
-        echo "        Alfredo Tools v0.3"
-        echo "========================================="
-        echo "Uso:"
-        echo "  ./bin/alfredo salud"
-        echo "  ./bin/alfredo wifi"
-        echo "  ./bin/alfredo red"
+    *)
+        show_help
+        exit 1
         ;;
 esac

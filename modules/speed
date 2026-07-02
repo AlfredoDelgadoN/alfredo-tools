@@ -1,78 +1,148 @@
 #!/bin/bash
 
-BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Determinar la ruta base
+if [ -n "$ALFREDO_BASE" ]; then
+    BASE="$ALFREDO_BASE"
+else
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    BASE="$(cd "$SCRIPT_DIR/.." && pwd)"
+fi
 
 source "$BASE/lib/ui"
 
 title "Alfredo Tools - Speed"
 
+# Verificar dependencias
+MISSING=()
+for cmd in speedtest jq bc; do
+    if ! command -v $cmd &>/dev/null; then
+        MISSING+=($cmd)
+    fi
+done
+
+if [ ${#MISSING[@]} -gt 0 ]; then
+    error "Dependencias faltantes: ${MISSING[*]}"
+    echo
+    echo "  Instala con:"
+    echo "  sudo apt install ${MISSING[*]}"
+    echo
+    echo "  Para speedtest-cli:"
+    echo "  sudo apt install speedtest-cli"
+    echo "  o"
+    echo "  pip install speedtest-cli"
+    exit 1
+fi
+
+# Verificar que speedtest funciona
+if ! speedtest --version >/dev/null 2>&1; then
+    error "speedtest-cli no funciona correctamente"
+    echo "  Prueba reinstalarlo:"
+    echo "  sudo apt install --reinstall speedtest-cli"
+    exit 1
+fi
 
 TMPFILE=$(mktemp)
-
 INICIO=$(date +%s)
 
+echo -e "${BLUE}📊 Ejecutando prueba de velocidad...${RESET}"
+echo "  Conectando al servidor más cercano..."
+echo "  (Esto puede tomar 30-60 segundos)"
+
+# Ejecutar speedtest en background
 speedtest --format=json > "$TMPFILE" 2>/dev/null &
 PID=$!
 
+# Spinner
 SPIN='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
 i=0
-
 while kill -0 $PID 2>/dev/null; do
     TIEMPO=$(( $(date +%s) - INICIO ))
-    printf "\rRealizando prueba... %s  %2d s" "${SPIN:i:1}" "$TIEMPO"
+    printf "\r  ${SPIN:$i:1} %2d s" "$TIEMPO"
     i=$(( (i + 1) % ${#SPIN} ))
-    sleep 0.1
+    sleep 0.2
 done
 
+echo
 wait $PID
 
-echo
+# Verificar resultado
+if [ ! -s "$TMPFILE" ]; then
+    error "No se pudo obtener datos de speedtest"
+    echo "  Posibles causas:"
+    echo "    - Sin conexión a Internet"
+    echo "    - Speedtest no responde"
+    echo "    - Error en la API"
+    rm -f "$TMPFILE"
+    exit 1
+fi
 
 JSON=$(cat "$TMPFILE")
 rm -f "$TMPFILE"
 
-if [ $? -ne 0 ] || [ -z "$JSON" ]; then
-    fail "No fue posible realizar la prueba."
+# Validar JSON
+if ! echo "$JSON" | jq empty 2>/dev/null; then
+    error "Error al procesar los datos de speedtest"
+    echo "  Respuesta recibida:"
+    echo "$JSON" | head -5
     exit 1
 fi
 
-ISP=$(echo "$JSON" | jq -r '.isp')
-SERVER=$(echo "$JSON" | jq -r '.server.name')
-LOCATION=$(echo "$JSON" | jq -r '.server.location')
+# Extraer datos
+ISP=$(echo "$JSON" | jq -r '.isp // "Desconocido"')
+SERVER=$(echo "$JSON" | jq -r '.server.name // "Desconocido"')
+LOCATION=$(echo "$JSON" | jq -r '.server.location // ""')
+PUBLIC_IP=$(echo "$JSON" | jq -r '.interface.externalIp // "Desconocida"')
+PING=$(echo "$JSON" | jq -r '.ping.latency // 0' | awk '{printf "%.2f",$1}')
+JITTER=$(echo "$JSON" | jq -r '.ping.jitter // 0' | awk '{printf "%.2f",$1}')
+DOWNLOAD=$(echo "$JSON" | jq -r '.download.bandwidth // 0' | awk '{printf "%.2f", $1*8/1000000}')
+UPLOAD=$(echo "$JSON" | jq -r '.upload.bandwidth // 0' | awk '{printf "%.2f", $1*8/1000000}')
+LOSS=$(echo "$JSON" | jq -r '.packetLoss // 0')
 
-LOCAL_IP=$(echo "$JSON" | jq -r '.interface.internalIp')
-PUBLIC_IP=$(echo "$JSON" | jq -r '.interface.externalIp')
-VPN=$(echo "$JSON" | jq -r '.interface.isVpn')
-
-PING=$(echo "$JSON" | jq -r '.ping.latency' | awk '{printf "%.2f",$1}')
-JITTER=$(echo "$JSON" | jq -r '.ping.jitter' | awk '{printf "%.2f",$1}')
-
-DOWNLOAD=$(echo "$JSON" | jq '.download.bandwidth*8/1000000' | awk '{printf "%.2f",$1}')
-UPLOAD=$(echo "$JSON" | jq '.upload.bandwidth*8/1000000' | awk '{printf "%.2f",$1}')
-
-LOSS=$(echo "$JSON" | jq -r '.packetLoss')
+echo
+echo -e "${BLUE}📡 Resultados de la prueba${RESET}"
+separator
 
 field "Proveedor" "$ISP"
-field "Servidor" "$SERVER ($LOCATION)"
-field "IP pública" "$PUBLIC_IP"
-field "Duración" "${TIEMPO} s"
+field "Servidor" "$SERVER ${LOCATION:+($LOCATION)}"
+field "IP Pública" "$PUBLIC_IP"
+field "Duración" "${TIEMPO}s"
 
 echo
-
 field "Ping" "$PING ms"
-field "Jitter" "$JITTER ms"
-field "Download" "$DOWNLOAD Mbps"
-field "Upload" "$UPLOAD Mbps"
-field "Pérdida" "$LOSS %"
+if [ "$JITTER" != "0" ] && [ -n "$JITTER" ]; then
+    field "Jitter" "$JITTER ms"
+fi
+field "Descarga" "$DOWNLOAD Mbps"
+field "Subida" "$UPLOAD Mbps"
+if [ "$LOSS" != "0" ] && [ -n "$LOSS" ]; then
+    field "Pérdida" "$LOSS%"
+fi
 
 echo
-
-if (( $(echo "$DOWNLOAD >= 300" | bc -l) )); then
-    ok "Conexión excelente"
-elif (( $(echo "$DOWNLOAD >= 100" | bc -l) )); then
-    ok "Conexión muy buena"
-elif (( $(echo "$DOWNLOAD >= 50" | bc -l) )); then
-    ok "Conexión buena"
+# Evaluar calidad
+if (( $(echo "$DOWNLOAD >= 300" | bc -l 2>/dev/null || echo 0) )); then
+    ok "🚀 Conexión EXCELENTE (Fibra/Gbps)"
+elif (( $(echo "$DOWNLOAD >= 100" | bc -l 2>/dev/null || echo 0) )); then
+    ok "✅ Conexión MUY BUENA"
+elif (( $(echo "$DOWNLOAD >= 50" | bc -l 2>/dev/null || echo 0) )); then
+    ok "👍 Conexión BUENA"
+elif (( $(echo "$DOWNLOAD >= 20" | bc -l 2>/dev/null || echo 0) )); then
+    warn "⚠️ Conexión ACEPTABLE"
+elif (( $(echo "$DOWNLOAD >= 5" | bc -l 2>/dev/null || echo 0) )); then
+    warn "🐢 Conexión LENTA (ADSL básico)"
 else
-    warn "Conexión lenta"
+    warn "📡 Conexión MUY LENTA (satelital/móvil)"
+fi
+
+echo
+echo -e "${BLUE}💡 Recomendaciones${RESET}"
+separator
+if (( $(echo "$PING < 20" | bc -l 2>/dev/null || echo 0) )); then
+    echo "  ✅ Excelente latencia para gaming"
+elif (( $(echo "$PING < 50" | bc -l 2>/dev/null || echo 0) )); then
+    echo "  ✓ Buena latencia para gaming"
+elif (( $(echo "$PING < 100" | bc -l 2>/dev/null || echo 0) )); then
+    echo "  ⚠️ Latencia aceptable para gaming casual"
+else
+    echo "  ❌ Alta latencia - no recomendado para gaming"
 fi

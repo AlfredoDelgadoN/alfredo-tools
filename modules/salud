@@ -1,21 +1,55 @@
 #!/bin/bash
 
-BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Determinar la ruta base
+if [ -n "$ALFREDO_BASE" ]; then
+    BASE="$ALFREDO_BASE"
+else
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    BASE="$(cd "$SCRIPT_DIR/.." && pwd)"
+fi
 
+# Cargar UI
 source "$BASE/lib/ui"
 
-title "Alfredo Tools - Speed"
+title "Alfredo Tools - Salud del Sistema"
 
-title "Alfredo Tools - Salud"
-
-echo
-echo "Uso del disco"
+echo -e "${BLUE}📊 CPU${RESET}"
 separator
-df -h /
+echo "Carga: $(uptime | awk -F'load average:' '{print $2}')"
+echo "Info:"
+lscpu | grep -E 'Model name|CPU\(s\)|MHz' | sed 's/^/  /'
 
 echo
-echo "Memoria"
+echo -e "${BLUE}💾 Memoria${RESET}"
 separator
 free -h
+
+echo
+echo -e "${BLUE}💿 Disco${RESET}"
+separator
+df -h | grep -E '^/dev/|Filesystem'
+
+echo
+echo -e "${BLUE}⚙️ Procesos (Top 5 por CPU)${RESET}"
+separator
+ps aux --sort=-%cpu | head -6 | tail -5 | while read line; do
+    cpu=$(echo "$line" | awk '{print $3}')
+    cmd=$(echo "$line" | awk '{print $11}')
+    echo "  $cmd ($cpu% CPU)"
+done
+
+echo
+echo -e "${BLUE}⚙️ Procesos (Top 5 por Memoria)${RESET}"
+separator
+ps aux --sort=-%mem | head -6 | tail -5 | while read line; do
+    mem=$(echo "$line" | awk '{print $4}')
+    cmd=$(echo "$line" | awk '{print $11}')
+    echo "  $cmd ($mem% MEM)"
+done
+
+echo
+echo -e "${BLUE}📈 Uptime${RESET}"
+separator
+uptime -p
 
 ok "Sistema funcionando correctamente"

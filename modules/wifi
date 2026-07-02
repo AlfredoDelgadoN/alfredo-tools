@@ -1,56 +1,95 @@
 #!/bin/bash
 
-BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Determinar la ruta base
+if [ -n "$ALFREDO_BASE" ]; then
+    BASE="$ALFREDO_BASE"
+else
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    BASE="$(cd "$SCRIPT_DIR/.." && pwd)"
+fi
 
 source "$BASE/lib/ui"
 
-title "WiFi"
+title "Alfredo Tools - WiFi"
 
-IFACE=$(iw dev | awk '$1=="Interface"{print $2}')
-
-if [ -z "$IFACE" ]; then
-    echo "No se encontró interfaz WiFi."
+# Verificar que iw existe
+if ! command -v iw &>/dev/null; then
+    error "El comando 'iw' no está instalado"
+    echo "  Instala con: sudo apt install wireless-tools"
+    echo "  O prueba con: sudo apt install iw"
     exit 1
 fi
 
-echo "Interfaz : $IFACE"
+# Detectar interfaz WiFi
+IFACE=$(iw dev 2>/dev/null | awk '$1=="Interface"{print $2; exit}')
 
-SSID=$(iw dev "$IFACE" link | awk -F': ' '/SSID/ {print $2}')
-BSSID=$(iw dev "$IFACE" link | awk '/Connected to/ {print $3}')
-SIGNAL=$(iw dev "$IFACE" link | awk '/signal/ {print $2,$3}')
-FREQ=$(iw dev "$IFACE" link | awk '/freq/ {print $2}')
-RX=$(iw dev "$IFACE" link | awk -F': ' '/rx bitrate/ {print $2}')
-TX=$(iw dev "$IFACE" link | awk -F': ' '/tx bitrate/ {print $2}')
-IP=$(ip -4 addr show "$IFACE" | awk '/inet /{print $2}')
-GW=$(ip route | awk '/default/ {print $3}')
-
-echo
-echo "SSID      : $SSID"
-echo "BSSID     : $BSSID"
-echo "Señal     : $SIGNAL"
-echo "Frecuencia: $FREQ MHz"
-echo "RX        : $RX"
-echo "TX        : $TX"
-echo "IP        : $IP"
-echo "Gateway   : $GW"
-
-echo
-echo "Probando Internet..."
-
-if ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1; then
-    ok "Internet  : OK"
-else
-    error "Internet  : ERROR"
+if [ -z "$IFACE" ]; then
+    error "No se encontró interfaz WiFi."
+    echo "  Posibles causas:"
+    echo "    - No hay adaptador WiFi"
+    echo "    - WiFi está desactivado"
+    echo "    - Faltan drivers"
+    echo
+    echo "📡 Interfaces disponibles:"
+    ip link show | grep -E '^[0-9]+:' | awk -F': ' '{print "  " $2}'
+    exit 1
 fi
 
-echo
-echo "Probando DNS..."
+echo -e "${BLUE}📡 Información de la conexión WiFi${RESET}"
+separator
 
-if ping -c 1 -W 2 google.com >/dev/null 2>&1; then
-    ok "DNS       : OK"
-else
-    error "DNS       : ERROR"
+# Obtener información de la conexión
+LINK_INFO=$(iw dev "$IFACE" link 2>/dev/null)
+
+if [ -z "$LINK_INFO" ] || echo "$LINK_INFO" | grep -q "Not connected"; then
+    warn "No conectado a ninguna red WiFi"
+    echo "  Interfaz: $IFACE"
+    echo
+    echo "🔍 Escaneando redes disponibles..."
+    echo "  (Puede tomar unos segundos)"
+    iw dev "$IFACE" scan 2>/dev/null | grep -E 'SSID:|signal:' | head -10 | while read line; do
+        if echo "$line" | grep -q "SSID:"; then
+            echo "  📶 $(echo "$line" | cut -d: -f2-)"
+        else
+            echo "     $(echo "$line" | cut -d: -f2-)"
+        fi
+    done
+    exit 0
 fi
 
+SSID=$(echo "$LINK_INFO" | awk -F': ' '/SSID/ {print $2}')
+BSSID=$(echo "$LINK_INFO" | awk '/Connected to/ {print $3}')
+SIGNAL=$(echo "$LINK_INFO" | awk '/signal/ {print $2" "$3}')
+FREQ=$(echo "$LINK_INFO" | awk '/freq/ {print $2}')
+RX=$(echo "$LINK_INFO" | awk -F': ' '/rx bitrate/ {print $2}')
+TX=$(echo "$LINK_INFO" | awk -F': ' '/tx bitrate/ {print $2}')
+MAC=$(ip link show "$IFACE" | awk '/link\/ether/ {print toupper($2)}')
+IP=$(ip -4 addr show "$IFACE" 2>/dev/null | awk '/inet /{print $2}')
+GW=$(ip route 2>/dev/null | awk '/default/ {print $3}')
+
+field "SSID" "$SSID"
+field "Interfaz" "$IFACE"
+field "MAC" "$MAC"
+field "IP" "${IP:-No asignada}"
+field "Gateway" "${GW:-No detectado}"
+field "BSSID" "$BSSID"
+field "Señal" "$SIGNAL"
+field "Frecuencia" "$FREQ MHz"
+field "RX" "$RX"
+field "TX" "$TX"
+
 echo
-echo "========================================="
+echo -e "${BLUE}🌐 Pruebas de conectividad${RESET}"
+separator
+
+if ping -c 2 -W 2 8.8.8.8 >/dev/null 2>&1; then
+    ok "Internet: OK"
+else
+    error "Internet: ERROR"
+fi
+
+if ping -c 2 -W 2 google.com >/dev/null 2>&1; then
+    ok "DNS: OK"
+else
+    error "DNS: ERROR"
+fi

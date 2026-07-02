@@ -1,0 +1,5 @@
+git add .
+git commit -m "v0.5 - Added Speed module with Ookla JSON support"
+git tag -a v0.5 -m "Alfredo Tools v0.5"
+git push
+git push origin v0.5

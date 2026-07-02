@@ -1,54 +1,95 @@
 #!/bin/bash
 
-BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Determinar la ruta base
+if [ -n "$ALFREDO_BASE" ]; then
+    BASE="$ALFREDO_BASE"
+else
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    BASE="$(cd "$SCRIPT_DIR/.." && pwd)"
+fi
 
 source "$BASE/lib/ui"
 
-title "Red"
+title "Alfredo Tools - Red"
 
 # Detectar interfaz activa
-IFACE=$(ip route | awk '/default/ {print $5; exit}')
+IFACE=$(ip route 2>/dev/null | awk '/default/ {print $5; exit}')
 
-echo "Interfaz : $IFACE"
+if [ -z "$IFACE" ]; then
+    error "No se encontró interfaz de red activa"
+    echo "  Interfaces disponibles:"
+    ip link show | grep -E '^[0-9]+:' | awk -F': ' '{print "  " $2}'
+    exit 1
+fi
 
-IP=$(ip -4 addr show "$IFACE" | grep inet | awk '{print $2}')
-echo "IP       : $IP"
+echo -e "${BLUE}📡 Información de red${RESET}"
+separator
 
-GW=$(ip route | awk '/default/ {print $3; exit}')
-echo "Gateway  : $GW"
+IP=$(ip -4 addr show "$IFACE" 2>/dev/null | grep inet | awk '{print $2}')
+GW=$(ip route 2>/dev/null | awk '/default/ {print $3; exit}')
 
-DNS=$(resolvectl status | awk '{print $3}' | paste -sd ", " -)
-echo "DNS      : $DNS"
-
-echo
-
-echo "Prueba Gateway"
-
-if ping -c 2 -W 2 "$GW" >/dev/null 2>&1
-then
-    ok "Gateway  : OK"
+# Obtener DNS de forma universal
+if command -v resolvectl &>/dev/null; then
+    DNS=$(resolvectl status 2>/dev/null | grep -A1 "DNS Servers" | tail -1 | awk '{print $1}' | paste -sd ", " -)
+    if [ -z "$DNS" ]; then
+        DNS=$(resolvectl status 2>/dev/null | grep "DNS Servers" | awk -F': ' '{print $2}' | paste -sd ", " -)
+    fi
+elif [ -f /etc/resolv.conf ]; then
+    DNS=$(awk '/nameserver/ {print $2}' /etc/resolv.conf | paste -sd ", " -)
 else
-    error "Gateway  : ERROR"
+    DNS="No detectado"
+fi
+
+field "Interfaz" "$IFACE"
+field "IP" "${IP:-No asignada}"
+field "Gateway" "${GW:-No detectado}"
+field "DNS" "${DNS:-No detectado}"
+
+# Obtener MAC
+MAC=$(ip link show "$IFACE" 2>/dev/null | awk '/link\/ether/ {print toupper($2)}')
+if [ -n "$MAC" ]; then
+    field "MAC" "$MAC"
 fi
 
 echo
+echo -e "${BLUE}🌐 Interfaces de red${RESET}"
+separator
+ip -br addr show 2>/dev/null | grep -v lo | while read line; do
+    echo "  $line"
+done
 
-echo "Prueba Internet"
+echo
+echo -e "${BLUE}🔗 Pruebas de conectividad${RESET}"
+separator
 
-if ping -c 2 -W 2 8.8.8.8 >/dev/null 2>&1
-then
-    ok "Internet : OK"
+if [ -n "$GW" ] && [ "$GW" != "No detectado" ]; then
+    echo "Gateway ($GW):"
+    if ping -c 2 -W 2 "$GW" >/dev/null 2>&1; then
+        ok "Gateway: OK"
+    else
+        error "Gateway: ERROR"
+    fi
+    echo
+fi
+
+echo "Internet (8.8.8.8):"
+if ping -c 2 -W 2 8.8.8.8 >/dev/null 2>&1; then
+    ok "Internet: OK"
 else
-    error "Internet : ERROR"
+    error "Internet: ERROR"
 fi
 
 echo
-
-echo "Prueba DNS"
-
-if ping -c 2 -W 2 google.com >/dev/null 2>&1
-then
-    ok "DNS      : OK"
+echo "DNS (google.com):"
+if ping -c 2 -W 2 google.com >/dev/null 2>&1; then
+    ok "DNS: OK"
 else
-    error "DNS      : ERROR"
+    error "DNS: ERROR"
 fi
+
+echo
+echo -e "${BLUE}📊 Estadísticas de red${RESET}"
+separator
+echo "Paquetes enviados/recibidos:"
+ip -s link show "$IFACE" 2>/dev/null | grep -A1 "RX:" | tail -1 | awk '{print "  RX: " $1 " bytes"}'
+ip -s link show "$IFACE" 2>/dev/null | grep -A1 "TX:" | tail -1 | awk '{print "  TX: " $1 " bytes"}'

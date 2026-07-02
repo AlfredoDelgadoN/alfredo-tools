@@ -1,0 +1,59 @@
+#!/bin/bash
+# lib/net - Funciones de red universales
+
+# Detectar interfaz por defecto
+get_default_interface() {
+    ip route | awk '/default/ {print $5; exit}'
+}
+
+# Obtener IP
+get_ip() {
+    local iface="$1"
+    ip -4 addr show "$iface" | awk '/inet / {print $2}' | head -1
+}
+
+# Obtener gateway
+get_gateway() {
+    ip route | awk '/default/ {print $3; exit}'
+}
+
+# Obtener DNS (universal)
+get_dns_servers() {
+    if command -v resolvectl &>/dev/null; then
+        resolvectl status | awk '/DNS Servers/ {print $3}' | head -1
+    elif [ -f /etc/resolv.conf ]; then
+        awk '/nameserver/ {print $2}' /etc/resolv.conf | head -1
+    else
+        echo "No detectado"
+    fi
+}
+
+# Detectar interfaz WiFi
+detect_wifi_interface() {
+    if command -v iw &>/dev/null; then
+        iw dev | awk '$1=="Interface"{print $2; exit}'
+    elif [ "$(uname)" = "Darwin" ]; then
+        /System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport -I | awk '/AirPort/ {print $1}'
+    else
+        echo ""
+    fi
+}
+
+# Obtener info WiFi en JSON
+get_wifi_info() {
+    local iface="$1"
+    local json="{}"
+    
+    if command -v iw &>/dev/null; then
+        local link=$(iw dev "$iface" link)
+        json=$(echo "$json" | jq --arg ssid "$(echo "$link" | awk -F': ' '/SSID/ {print $2}')" '.ssid=$ssid')
+        json=$(echo "$json" | jq --arg bssid "$(echo "$link" | awk '/Connected to/ {print $3}')" '.bssid=$bssid')
+        json=$(echo "$json" | jq --arg signal "$(echo "$link" | awk '/signal/ {print $2" "$3}')" '.signal=$signal')
+        json=$(echo "$json" | jq --arg freq "$(echo "$link" | awk '/freq/ {print $2}')" '.freq=$freq')
+        json=$(echo "$json" | jq --arg ip "$(ip -4 addr show "$iface" | awk '/inet / {print $2}')" '.ip=$ip')
+        json=$(echo "$json" | jq --arg gw "$(ip route | awk '/default/ {print $3}')" '.gateway=$gw')
+        json=$(echo "$json" | jq --arg mac "$(ip link show "$iface" | awk '/link\/ether/ {print toupper($2)}')" '.mac=$mac')
+    fi
+    
+    echo "$json"
+}

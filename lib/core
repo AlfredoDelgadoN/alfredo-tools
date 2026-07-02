@@ -1,0 +1,38 @@
+#!/bin/bash
+# lib/core
+
+# Detectar sistema operativo
+get_os() {
+    case "$(uname -s)" in
+        Linux*)     echo "linux";;
+        Darwin*)    echo "macos";;
+        CYGWIN*|MINGW*|MSYS*) echo "windows";;
+        *)          echo "unknown";;
+    esac
+}
+
+OS=$(get_os)
+
+# Verificar dependencias necesarias
+check_dependencies() {
+    local missing=()
+    for cmd in ping awk grep sed; do
+        if ! command -v $cmd &>/dev/null; then
+            missing+=($cmd)
+        fi
+    done
+    
+    if [ ${#missing[@]} -gt 0 ]; then
+        echo "❌ Dependencias faltantes: ${missing[*]}"
+        echo "Instala: sudo apt install ${missing[*]}"
+        exit 1
+    fi
+}
+
+# Obtener script de configuración
+get_config() {
+    local config_file="$HOME/.alfredo.conf"
+    if [ -f "$config_file" ]; then
+        source "$config_file"
+    fi
+}
