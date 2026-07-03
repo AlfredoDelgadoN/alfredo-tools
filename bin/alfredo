@@ -23,28 +23,36 @@ show_help() {
     echo "  alfredo historial      - Historial de reparaciones"
     echo
     echo "🔧 REPARACIÓN:"
-    echo "  alfredo reparar        - Reparación automática"
-    echo "  alfredo reparar-todo   - Reparación completa"
-    echo "  alfredo fix-amd        - Solución específica AMD"
-    echo "  alfredo fix-audio      - Solución de audio"
-    echo "  alfredo fix-hdmi       - Solución problemas HDMI"
-    echo "  alfredo fix-screen     - Solución rápida pantalla negra"
+    echo "  alfredo reparar          - Reparación automática"
+    echo "  alfredo reparar-todo     - Reparación completa"
+    echo "  alfredo fix-amd          - Solución específica AMD"
+    echo "  alfredo fix-audio        - Solución de audio"
+    echo "  alfredo fix-hdmi         - Solución problemas HDMI"
+    echo "  alfredo fix-screen       - Solución rápida pantalla negra"
     echo "  alfredo screen-fix-quick - Solución rápida pantalla negra ⚡"
     echo
     echo "📊 SISTEMA:"
-    echo "  alfredo salud          - Estado completo del sistema"
-    echo "  alfredo info           - Resumen rápido del sistema"
-    echo "  alfredo procesador     - Información del procesador"
-    echo "  alfredo memoria        - Información de memoria"
-    echo "  alfredo discos         - Información de discos"
-    echo "  alfredo red            - Información de red"
-    echo "  alfredo wifi           - Información WiFi"
-    echo "  alfredo speed          - Velocidad de Internet"
+    echo "  alfredo salud               - Estado completo del sistema"
+    echo "  alfredo info                - Resumen rápido del sistema"
+    echo "  alfredo resumen-ejecutivo   - Resumen ejecutivo del sistema 📊"
+    echo "  alfredo procesador          - Información del procesador"
+    echo "  alfredo memoria             - Información de memoria"
+    echo "  alfredo optimizar-memoria   - Optimizar memoria 🚀"
+    echo "  alfredo diagnostico-memoria - Diagnóstico de memoria 🔍"
+    echo "  alfredo optimizar-soldada   - Optimizar memoria soldada 🔧"
+    echo "  alfredo tiempo-arranque     - Tiempo de arranque ⏱️"
+    echo "  alfredo ultimo-arranque     - Último arranque detallado 📋"
+    echo "  alfredo optimizar-arranque  - Optimizar tiempo de arranque 🚀"
+    echo "  alfredo discos              - Información de discos"
+    echo "  alfredo nvme-status         - Estado del NVMe ⚡"
+    echo "  alfredo red                 - Información de red"
+    echo "  alfredo wifi                - Información WiFi"
+    echo "  alfredo speed               - Velocidad de Internet"
     echo
     echo "🌡️  TEMPERATURA:"
-    echo "  alfredo temp-discos    - Monitorear temperatura de discos"
+    echo "  alfredo temp-discos        - Monitorear temperatura de discos"
     echo "  alfredo temp-discos-simple - Temperatura de discos (simple)"
-    echo "  alfredo temp-cpu       - Monitorear temperatura de CPU"
+    echo "  alfredo temp-cpu           - Monitorear temperatura de CPU"
     echo
     echo "🖥️  PANTALLAS:"
     echo "  alfredo setup-monitors - Configurar monitores"
@@ -86,12 +94,12 @@ case "$1" in
         exec "$BASE/modules/$1"
         ;;
     # Sistema
-    salud|info|procesador|memoria|discos|red|wifi|speed)
+    salud|info|procesador|memoria|discos|red|wifi|speed|resumen-ejecutivo|optimizar-memoria|tiempo-arranque|ultimo-arranque|optimizar-arranque|mac-info)
         check_module "$1"
         exec "$BASE/modules/$1"
         ;;
     # Temperatura
-    temp-discos|temp-discos-simple|temp-cpu)
+    temp-discos|temp-discos-simple|temp-cpu|nvme-status)
         check_module "$1"
         exec "$BASE/modules/$1"
         ;;

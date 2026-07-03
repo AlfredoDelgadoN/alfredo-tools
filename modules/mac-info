@@ -1,0 +1,69 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🍏 Información de MacBook"
+
+echo -e "${BLUE}🔍 Detectando hardware de Apple...${RESET}"
+separator
+
+# 1. Modelo
+echo "1️⃣ Modelo:"
+if command -v dmidecode &>/dev/null; then
+    MODEL=$(sudo dmidecode -t system 2>/dev/null | grep "Product Name:" | cut -d: -f2 | xargs)
+    if [ -n "$MODEL" ]; then
+        echo "  $MODEL"
+    else
+        echo "  MacBook detectado (2010)"
+    fi
+fi
+
+# 2. GPU
+echo
+echo "2️⃣ GPU:"
+GPU=$(lspci | grep -i "vga\|3d" | cut -d: -f3 | xargs)
+if echo "$GPU" | grep -qi "nvidia"; then
+    echo "  ${GREEN}✅ $GPU${NC}"
+    echo "  ℹ️  Driver: $(lsmod | grep -q nvidia && echo "NVIDIA (propietario)" || echo "nouveau (open-source)")"
+fi
+
+# 3. Temperatura
+echo
+echo "3️⃣ Temperaturas:"
+if command -v sensors &>/dev/null; then
+    sensors | grep -E "Core|CPU|Temp" | head -5
+else
+    echo "  ℹ️ Instala: sudo apt install lm-sensors"
+fi
+
+# 4. Batería (si existe)
+echo
+echo "4️⃣ Batería:"
+if [ -d /sys/class/power_supply/BAT0 ]; then
+    BATTERY=$(cat /sys/class/power_supply/BAT0/capacity 2>/dev/null)
+    if [ -n "$BATTERY" ]; then
+        echo "  🔋 Capacidad: ${BATTERY}%"
+        STATUS=$(cat /sys/class/power_supply/BAT0/status 2>/dev/null)
+        echo "  ⚡ Estado: $STATUS"
+    fi
+else
+    echo "  ℹ️ No se detectó batería"
+fi
+
+# 5. Recomendaciones
+echo
+echo -e "${BLUE}💡 RECOMENDACIONES PARA MACBOOK 2010${RESET}"
+separator
+
+echo "  📌 Para mejorar el rendimiento:"
+echo "     • Usa SSD (si aún tiene HDD)"
+echo "     • Desactiva efectos visuales:"
+echo "       xfwm4 --replace & (si usas Xfce)"
+echo "     • Usa Linux Mint 22.04 (como ya haces)"
+echo
+echo "  🔧 Si usas WiFi:"
+echo "     • Ejecuta: alfredo wifi"
+echo "     • Verifica drivers: lspci | grep -i network"
+
+ok "Información de MacBook completada"

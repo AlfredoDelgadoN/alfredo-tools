@@ -1,0 +1,127 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🚀 Optimización de Arranque"
+
+echo -e "${BLUE}🔧 Analizando servicios de arranque...${RESET}"
+separator
+
+echo -e "${YELLOW}⚠️  Se optimizarán servicios para acelerar el arranque${NC}"
+echo -e "${YELLOW}   Esto puede afectar ciertas funcionalidades${NC}"
+echo
+read -p "¿Continuar? (s/N) " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Ss]$ ]]; then
+    exit 0
+fi
+
+# ============================================
+# 1. OPTIMIZAR ZRAM
+# ============================================
+echo -e "${BLUE}1️⃣ Optimizando zram...${RESET}"
+echo "  🔧 Reduciendo tamaño de zram a 1 GB (era 2 GB)"
+sudo bash -c 'cat > /etc/systemd/system/zram.service << EOF
+[Unit]
+Description=ZRAM Swap
+After=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/bin/bash -c "modprobe zram && echo lz4 > /sys/block/zram0/comp_algorithm && echo 1G > /sys/block/zram0/disksize && mkswap /dev/zram0 && swapon /dev/zram0"
+ExecStop=/bin/bash -c "swapoff /dev/zram0 && echo 1 > /sys/block/zram0/reset"
+
+[Install]
+WantedBy=multi-user.target
+EOF'
+
+sudo systemctl daemon-reload
+sudo systemctl restart zram.service
+echo -e "  ${GREEN}✅ ZRAM optimizado${NC}"
+
+# ============================================
+# 2. DESHABILITAR SNAP (si no lo usas)
+# ============================================
+echo
+echo -e "${BLUE}2️⃣ Verificando Snap...${RESET}"
+if command -v snap &>/dev/null; then
+    SNAP_PACKAGES=$(snap list 2>/dev/null | wc -l)
+    if [ "$SNAP_PACKAGES" -gt 1 ]; then
+        echo "  📦 Usas Snap (${SNAP_PACKAGES} paquetes)"
+        echo "  ℹ️  Si no usas Snap, puedes deshabilitarlo:"
+        echo "     sudo systemctl disable snapd.service"
+        echo "     sudo systemctl disable snapd.socket"
+    else
+        echo "  ℹ️  No usas Snap - deshabilitando..."
+        sudo systemctl disable snapd.service 2>/dev/null
+        sudo systemctl disable snapd.socket 2>/dev/null
+        echo -e "  ${GREEN}✅ Snap deshabilitado${NC}"
+    fi
+fi
+
+# ============================================
+# 3. REDUCIR TIEMPO DE GRUB
+# ============================================
+echo
+echo -e "${BLUE}3️⃣ Optimizando GRUB...${RESET}"
+echo "  🔧 Reduciendo tiempo de espera a 2 segundos"
+sudo sed -i 's/GRUB_TIMEOUT=.*/GRUB_TIMEOUT=2/' /etc/default/grub
+sudo update-grub 2>/dev/null
+echo -e "  ${GREEN}✅ GRUB optimizado${NC}"
+
+# ============================================
+# 4. DESHABILITAR SERVICIOS INNECESARIOS
+# ============================================
+echo
+echo -e "${BLUE}4️⃣ Deshabilitando servicios innecesarios...${RESET}"
+
+SERVICIOS_INNECESARIOS=(
+    "bluetooth"
+    "cups"  # si no usas impresora
+    "avahi-daemon"  # si no usas redes Apple
+    "modemmanager"  # si no usas módem
+)
+
+for servicio in "${SERVICIOS_INNECESARIOS[@]}"; do
+    if systemctl is-enabled $servicio 2>/dev/null | grep -q "enabled"; then
+        echo "  🔧 Deshabilitando $servicio..."
+        sudo systemctl disable $servicio 2>/dev/null
+        echo -e "    ${GREEN}✅ $servicio deshabilitado${NC}"
+    fi
+done
+
+# ============================================
+# 5. VERIFICAR MEJORAS
+# ============================================
+echo
+echo -e "${BLUE}5️⃣ Verificando mejoras...${RESET}"
+
+# Verificar tiempo de arranque
+if command -v systemd-analyze &>/dev/null; then
+    echo "  📊 Nuevo tiempo estimado:"
+    systemd-analyze 2>/dev/null | head -1
+fi
+
+echo
+echo -e "${BLUE}💡 RECOMENDACIONES FINALES${RESET}"
+separator
+
+echo "  📌 Para un arranque más rápido:"
+echo "     • Deshabilita servicios que no uses:"
+echo "       sudo systemctl list-unit-files --type=service | grep enabled"
+echo "     • Usa 'quiet splash' en GRUB"
+echo "     • Considera usar SSD (ya usas NVMe ✅)"
+echo
+echo "  🔄 Para aplicar cambios:"
+echo "     • Reinicia el sistema: sudo reboot"
+echo "     • Mide el tiempo: alfredo tiempo-arranque"
+
+ok "Optimización de arranque completada"
+echo
+read -p "¿Reiniciar ahora para aplicar los cambios? (s/N) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Ss]$ ]]; then
+    sudo reboot
+fi

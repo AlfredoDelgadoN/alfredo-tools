@@ -8,28 +8,143 @@ title "📊 Información de Memoria"
 echo -e "${BLUE}💾 ESTADO DE LA MEMORIA${RESET}"
 separator
 
-# Memoria RAM
-echo "1️⃣ Memoria RAM:"
+# ============================================
+# 1. INFORMACIÓN DEL HARDWARE DE MEMORIA
+# ============================================
+echo "1️⃣ Información del hardware:"
+
+# Detectar módulos de memoria
+if command -v dmidecode &>/dev/null; then
+    echo "  🔍 Detectando módulos de memoria..."
+    echo
+    
+    # Obtener información de todos los módulos
+    MEMORY_INFO=$(sudo dmidecode -t memory 2>/dev/null)
+    
+    # Contar módulos
+    MODULE_COUNT=$(echo "$MEMORY_INFO" | grep -c "Memory Device$")
+    
+    if [ "$MODULE_COUNT" -gt 0 ]; then
+        echo "  📊 Módulos detectados: $MODULE_COUNT"
+        echo
+        
+        # Procesar cada módulo
+        MODULE_NUM=0
+        echo "$MEMORY_INFO" | while read line; do
+            if echo "$line" | grep -q "Memory Device$"; then
+                MODULE_NUM=$((MODULE_NUM + 1))
+                echo -e "  ${BOLD}Módulo #$MODULE_NUM${RESET}"
+            fi
+            
+            # Extraer información relevante
+            if echo "$line" | grep -q "Size:"; then
+                SIZE=$(echo "$line" | cut -d: -f2 | xargs)
+                if [ "$SIZE" != "No Module Installed" ] && [ "$SIZE" != "Not Installed" ]; then
+                    echo "    Tamaño: $SIZE"
+                fi
+            fi
+            
+            if echo "$line" | grep -q "Type:"; then
+                TYPE=$(echo "$line" | cut -d: -f2 | xargs)
+                if [ -n "$TYPE" ] && [ "$TYPE" != "Unknown" ] && [ "$TYPE" != "Other" ]; then
+                    echo "    Tipo: $TYPE"
+                fi
+            fi
+            
+            if echo "$line" | grep -q "Speed:"; then
+                SPEED=$(echo "$line" | cut -d: -f2 | xargs)
+                if [ -n "$SPEED" ] && [ "$SPEED" != "Unknown" ]; then
+                    echo "    Velocidad: $SPEED"
+                fi
+            fi
+            
+            if echo "$line" | grep -q "Manufacturer:"; then
+                MANUFACTURER=$(echo "$line" | cut -d: -f2 | xargs)
+                if [ -n "$MANUFACTURER" ] && [ "$MANUFACTURER" != "Not Specified" ] && [ "$MANUFACTURER" != "Unknown" ]; then
+                    echo "    Fabricante: $MANUFACTURER"
+                fi
+            fi
+            
+            if echo "$line" | grep -q "Part Number:"; then
+                PART=$(echo "$line" | cut -d: -f2 | xargs)
+                if [ -n "$PART" ] && [ "$PART" != "Not Specified" ] && [ "$PART" != "Unknown" ] && [ "$PART" != "Array1_PartNumber" ]; then
+                    echo "    N° de Parte: $PART"
+                fi
+            fi
+            
+            if echo "$line" | grep -q "Serial Number:"; then
+                SERIAL=$(echo "$line" | cut -d: -f2 | xargs)
+                if [ -n "$SERIAL" ] && [ "$SERIAL" != "Not Specified" ] && [ "$SERIAL" != "Unknown" ]; then
+                    echo "    Serial: $SERIAL"
+                fi
+            fi
+            
+            if echo "$line" | grep -q "Form Factor:"; then
+                FORM=$(echo "$line" | cut -d: -f2 | xargs)
+                if [ -n "$FORM" ] && [ "$FORM" != "Unknown" ] && [ "$FORM" != "Other" ]; then
+                    echo "    Factor de forma: $FORM"
+                fi
+            fi
+            
+            if echo "$line" | grep -q "Data Width:"; then
+                DATA_WIDTH=$(echo "$line" | cut -d: -f2 | xargs)
+                if [ -n "$DATA_WIDTH" ] && [ "$DATA_WIDTH" != "Unknown" ]; then
+                    echo "    Ancho de datos: $DATA_WIDTH"
+                fi
+            fi
+            
+            if echo "$line" | grep -q "Max Speed:"; then
+                MAX_SPEED=$(echo "$line" | cut -d: -f2 | xargs)
+                if [ -n "$MAX_SPEED" ] && [ "$MAX_SPEED" != "Unknown" ] && [ "$MAX_SPEED" != "Not Specified" ]; then
+                    echo "    Velocidad máxima: $MAX_SPEED"
+                fi
+            fi
+            
+            if echo "$line" | grep -q "^$" && [ $MODULE_NUM -gt 0 ]; then
+                echo
+            fi
+        done
+    else
+        echo "  ℹ️ No se pudieron detectar módulos con dmidecode"
+    fi
+else
+    echo "  ℹ️ dmidecode no instalado (sudo apt install dmidecode)"
+fi
+
+# ============================================
+# 2. INFORMACIÓN DETALLADA DE MEMORIA
+# ============================================
+echo
+echo "2️⃣ Información detallada:"
+separator
+
+# Memoria total y uso
+echo "📊 Estado actual:"
 free -h | awk '/Mem:/ {
-    print "  Total: " $2
-    print "  Usada: " $3 " (" $3/$2*100 "%)"
-    print "  Libre: " $4
-    print "  Búfer/Caché: " $6
-    print "  Disponible: " $7
+    total=$2
+    used=$3
+    free=$4
+    avail=$7
+    used_percent = used/total*100
+    printf "  Total: %s\n  Usada: %s (%.0f%%)\n  Libre: %s\n  Disponible: %s\n", total, used, used_percent, free, avail
 }'
 
+# Swap
 echo
-echo "2️⃣ Swap:"
 free -h | awk '/Swap:/ {
     if ($2 != "0B") {
+        print "🔄 Swap:"
         print "  Total: " $2
         print "  Usado: " $3
         print "  Libre: " $4
     } else {
-        print "  No configurado"
+        print "🔄 Swap: No configurado"
     }
 }'
 
+# ============================================
+# 3. PROCESOS QUE MÁS MEMORIA CONSUMEN
+# ============================================
 echo
 echo "3️⃣ Procesos que más memoria consumen:"
 ps aux --sort=-%mem | head -6 | tail -5 | while read line; do
@@ -38,9 +153,38 @@ ps aux --sort=-%mem | head -6 | tail -5 | while read line; do
     echo "  $cmd ($mem% MEM)"
 done
 
+# ============================================
+# 4. ESTADÍSTICAS DETALLADAS
+# ============================================
 echo
 echo "4️⃣ Estadísticas de memoria:"
-vmstat -s | head -10
+vmstat -s | head -8 | while read line; do
+    echo "  $line"
+done
 
+# ============================================
+# 5. RECOMENDACIONES
+# ============================================
 echo
+echo -e "${BLUE}💡 RECOMENDACIONES${RESET}"
+separator
+
+# Verificar si hay suficiente memoria
+TOTAL_MEM=$(free -g | awk '/Mem:/ {print $2}')
+if [ "$TOTAL_MEM" -lt 4 ]; then
+    echo "  ⚠️ Memoria baja (${TOTAL_MEM}GB). Considera aumentar la RAM."
+elif [ "$TOTAL_MEM" -lt 8 ]; then
+    echo "  ℹ️ Memoria aceptable (${TOTAL_MEM}GB). Funciona para tareas básicas."
+elif [ "$TOTAL_MEM" -lt 16 ]; then
+    echo "  ✅ Buena memoria (${TOTAL_MEM}GB). Ideal para uso diario."
+else
+    echo "  ✅ Excelente memoria (${TOTAL_MEM}GB). Ideal para multitarea y gaming."
+fi
+
+# Verificar uso de swap
+SWAP_USED=$(free -g | awk '/Swap:/ {print $3}')
+if [ -n "$SWAP_USED" ] && [ "$SWAP_USED" -gt 0 ]; then
+    echo "  ⚠️ Se está usando swap (${SWAP_USED}GB). Considera aumentar la RAM."
+fi
+
 ok "Información de memoria completada"

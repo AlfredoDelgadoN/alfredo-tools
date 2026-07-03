@@ -1,0 +1,106 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🔧 Optimización para Memoria Soldada"
+
+echo -e "${BLUE}🚀 Aplicando optimizaciones para memoria no upgradable...${RESET}"
+separator
+
+echo -e "${YELLOW}⚠️  Este equipo tiene memoria soldada (8 GB DDR4)${NC}"
+echo -e "${YELLOW}   Aplicaremos optimizaciones para mejorar el rendimiento${NC}"
+echo
+read -p "¿Continuar? (s/N) " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Ss]$ ]]; then
+    exit 0
+fi
+
+# ============================================
+# 1. CONFIGURAR ZRAM (compresión en RAM)
+# ============================================
+echo -e "${BLUE}1️⃣ Configurando zram...${RESET}"
+if ! command -v zram-config &>/dev/null; then
+    echo "  📦 Instalando zram-config..."
+    sudo apt install -y zram-config
+fi
+
+# Configurar zram (2 GB de compresión)
+echo "  🔧 Configurando 2 GB de zram..."
+sudo bash -c 'cat > /etc/modprobe.d/zram.conf << EOF
+options zram num_devices=1
+EOF'
+
+sudo bash -c 'cat > /etc/systemd/system/zram.service << EOF
+[Unit]
+Description=ZRAM Swap
+After=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/bin/bash -c "modprobe zram && echo lz4 > /sys/block/zram0/comp_algorithm && echo 2G > /sys/block/zram0/disksize && mkswap /dev/zram0 && swapon /dev/zram0"
+ExecStop=/bin/bash -c "swapoff /dev/zram0 && echo 1 > /sys/block/zram0/reset"
+
+[Install]
+WantedBy=multi-user.target
+EOF'
+
+sudo systemctl daemon-reload
+sudo systemctl enable zram.service
+sudo systemctl start zram.service
+
+echo -e "  ${GREEN}✅ ZRAM configurado${NC}"
+
+# ============================================
+# 2. REDUCIR SWAPPINESS
+# ============================================
+echo
+echo -e "${BLUE}2️⃣ Optimizando swappiness...${RESET}"
+echo "  Configurando swappiness=10 (usa swap solo cuando sea necesario)"
+echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.d/99-swappiness.conf >/dev/null
+sudo sysctl -p /etc/sysctl.d/99-swappiness.conf 2>/dev/null
+echo -e "  ${GREEN}✅ Swappiness optimizado${NC}"
+
+# ============================================
+# 3. LIMPIAR CACHÉ DE MEMORIA
+# ============================================
+echo
+echo -e "${BLUE}3️⃣ Limpiando caché...${RESET}"
+sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null 2>&1
+echo -e "  ${GREEN}✅ Caché limpiada${NC}"
+
+# ============================================
+# 4. RECOMENDACIONES FINALES
+# ============================================
+echo
+echo -e "${BLUE}💡 RECOMENDACIONES FINALES${RESET}"
+separator
+
+echo "  📌 Para mejorar el rendimiento en Huawei con 8 GB:"
+echo
+echo "  ✅ YA APLICADO:"
+echo "     • ZRAM activado (2 GB de compresión)"
+echo "     • Swappiness reducido (usa swap solo cuando sea necesario)"
+echo
+echo "  📌 RECOMENDADO:"
+echo "     • Cierra Chrome cuando no lo uses (consume ~1 GB)"
+echo "     • Usa Firefox en lugar de Chrome"
+echo "     • Desactiva efectos visuales en LXQt"
+echo "     • Mantén el sistema actualizado"
+echo "     • Ejecuta: sudo apt autoremove --purge"
+echo
+echo "  🔄 Para verificar:"
+echo "     • Memoria: alfredo memoria"
+echo "     • Estado: alfredo estado-actual"
+echo "     • ZRAM: swapon --show"
+
+ok "Optimizaciones aplicadas"
+echo
+echo "📌 Se recomienda reiniciar el sistema para aplicar todos los cambios"
+read -p "¿Reiniciar ahora? (s/N) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Ss]$ ]]; then
+    sudo reboot
+fi

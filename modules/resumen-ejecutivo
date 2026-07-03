@@ -1,0 +1,178 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "📊 RESUMEN EJECUTIVO - Alfredo Tools"
+
+echo -e "${BLUE}🔍 Sistema detectado:${RESET}"
+separator
+
+# ============================================
+# SISTEMA OPERATIVO
+# ============================================
+echo -e "${BOLD}🖥️  Sistema Operativo${RESET}"
+OS=$(lsb_release -ds 2>/dev/null || cat /etc/os-release | grep PRETTY_NAME | cut -d= -f2 | tr -d '"')
+KERNEL=$(uname -r)
+echo "  SO: $OS"
+echo "  Kernel: $KERNEL"
+echo "  Arquitectura: $(uname -m)"
+echo
+
+# ============================================
+# PROCESADOR
+# ============================================
+echo -e "${BOLD}⚡ Procesador${RESET}"
+MODEL=$(grep "model name" /proc/cpuinfo | head -1 | cut -d: -f2 | xargs)
+CORES=$(nproc)
+echo "  CPU: $MODEL"
+echo "  Núcleos: $CORES"
+
+# Velocidad actual
+CURRENT_MHZ=$(grep "MHz" /proc/cpuinfo | head -1 | awk '{print $4}' | cut -d'.' -f1)
+echo "  Velocidad: $CURRENT_MHZ MHz"
+
+# Temperatura
+if command -v sensors &>/dev/null; then
+    TEMP=$(sensors 2>/dev/null | grep -E "Tctl|Tdie|Package" | head -1 | grep -o '[0-9]*\.[0-9]*' | head -1)
+    if [ -n "$TEMP" ]; then
+        echo "  Temperatura: ${TEMP}°C"
+    fi
+fi
+echo
+
+# ============================================
+# MEMORIA
+# ============================================
+echo -e "${BOLD}💾 Memoria${RESET}"
+free -h | awk '/Mem:/ {
+    total=$2
+    used=$3
+    avail=$7
+    used_percent = used/total*100
+    printf "  Total: %s\n  Usada: %s (%.0f%%)\n  Disponible: %s\n", total, used, used_percent, avail
+}'
+echo
+
+# ============================================
+# DISCOS
+# ============================================
+echo -e "${BOLD}💿 Almacenamiento${RESET}"
+for DISK in $(lsblk -d -o NAME,TYPE | grep disk | awk '{print $1}' | grep -v "zram\|loop"); do
+    SIZE=$(lsblk -d -o SIZE "/dev/$DISK" 2>/dev/null | tail -1)
+    
+    # Determinar tipo
+    if echo "$DISK" | grep -q "nvme"; then
+        TIPO="NVMe"
+    elif [ -f "/sys/block/$DISK/queue/rotational" ]; then
+        ROTA=$(cat "/sys/block/$DISK/queue/rotational" 2>/dev/null)
+        if [ "$ROTA" = "0" ]; then
+            TIPO="SSD"
+        else
+            TIPO="HDD"
+        fi
+    else
+        TIPO="?"
+    fi
+    
+    # Temperatura
+    TEMP=""
+    if command -v smartctl &>/dev/null; then
+        TEMP=$(sudo smartctl -A "/dev/$DISK" 2>/dev/null | grep -E "^Temperature:" | awk '{print $2}' | sed 's/°C//')
+    fi
+    
+    echo -n "  📀 $DISK: $SIZE ($TIPO)"
+    if [ -n "$TEMP" ] && [ "$TEMP" -gt 0 ] 2>/dev/null; then
+        echo " - ${TEMP}°C"
+    else
+        echo ""
+    fi
+done
+
+# Uso de disco
+echo "  Uso: $(df -h / | awk 'NR==2 {print $5}') usado ($(df -h / | awk 'NR==2 {print $4}') libre)"
+echo
+
+# ============================================
+# PANTALLAS
+# ============================================
+echo -e "${BOLD}🖥️  Pantallas${RESET}"
+MONITOR_COUNT=$(xrandr --listmonitors 2>/dev/null | tail -n +2 | wc -l)
+echo "  Monitores: $MONITOR_COUNT"
+
+xrandr 2>/dev/null | grep -E " connected| connected primary" | while read line; do
+    MONITOR=$(echo "$line" | awk '{print $1}')
+    RES=$(echo "$line" | grep -oP '\d+x\d+' | head -1)
+    if [ -n "$RES" ]; then
+        echo "    $MONITOR: $RES"
+    fi
+done
+echo
+
+# ============================================
+# RED
+# ============================================
+echo -e "${BOLD}🌐 Red${RESET}"
+IFACE=$(ip route | awk '/default/ {print $5; exit}')
+IP=$(ip -4 addr show "$IFACE" 2>/dev/null | grep inet | awk '{print $2}' | head -1)
+echo "  Interfaz: $IFACE"
+echo "  IP: $IP"
+
+if ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1; then
+    echo "  Internet: ✅ Conectado"
+else
+    echo "  Internet: ❌ Desconectado"
+fi
+echo
+
+# ============================================
+# SERVICIOS PRINCIPALES
+# ============================================
+echo -e "${BOLD}🔧 Servicios${RESET}"
+SERVICIOS=("gdm3" "NetworkManager" "pipewire")
+for servicio in "${SERVICIOS[@]}"; do
+    if systemctl is-active --quiet $servicio 2>/dev/null; then
+        echo "  ✅ $servicio: Activo"
+    else
+        echo "  ❌ $servicio: Inactivo"
+    fi
+done
+echo
+
+# ============================================
+# ESTADÍSTICAS
+# ============================================
+echo -e "${BOLD}📈 Estadísticas${RESET}"
+echo "  Uptime: $(uptime -p | sed 's/up //')"
+echo "  Procesos: $(ps aux | wc -l)"
+LOAD=$(uptime | awk -F'load average:' '{print $2}' | xargs)
+echo "  Carga: $LOAD"
+
+echo
+separator
+ok "Resumen ejecutivo completado"
+
+# ============================================
+# MEMORIA - INFORMACIÓN DE HARDWARE
+# ============================================
+echo -e "${BOLD}💾 Memoria (Hardware)${RESET}"
+if command -v dmidecode &>/dev/null; then
+    MEMORY_INFO=$(sudo dmidecode -t memory 2>/dev/null)
+    MODULE_COUNT=$(echo "$MEMORY_INFO" | grep -c "Memory Device$")
+    
+    if [ "$MODULE_COUNT" -gt 0 ]; then
+        echo "  Módulos: $MODULE_COUNT"
+        
+        # Obtener información del primer módulo
+        TYPE=$(echo "$MEMORY_INFO" | grep -A 10 "Memory Device" | grep "Type:" | head -1 | cut -d: -f2 | xargs)
+        SPEED=$(echo "$MEMORY_INFO" | grep -A 10 "Memory Device" | grep "Speed:" | head -1 | cut -d: -f2 | xargs)
+        MANUFACTURER=$(echo "$MEMORY_INFO" | grep -A 10 "Memory Device" | grep "Manufacturer:" | head -1 | cut -d: -f2 | xargs)
+        SIZE=$(echo "$MEMORY_INFO" | grep -A 10 "Memory Device" | grep "Size:" | head -1 | cut -d: -f2 | xargs)
+        
+        [ -n "$TYPE" ] && echo "  Tipo: $TYPE"
+        [ -n "$SPEED" ] && [ "$SPEED" != "Unknown" ] && echo "  Velocidad: $SPEED"
+        [ -n "$MANUFACTURER" ] && [ "$MANUFACTURER" != "Not Specified" ] && echo "  Fabricante: $MANUFACTURER"
+        [ -n "$SIZE" ] && [ "$SIZE" != "No Module Installed" ] && echo "  Capacidad por módulo: $SIZE"
+    fi
+fi
+echo

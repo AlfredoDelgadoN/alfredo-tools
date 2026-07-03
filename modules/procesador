@@ -8,90 +8,190 @@ title "⚡ Información del Procesador"
 echo -e "${BLUE}🔍 Detalles completos del procesador...${RESET}"
 separator
 
-# 1. Información básica
+# ============================================
+# 1. INFORMACIÓN BÁSICA
+# ============================================
 echo "1️⃣ Información básica:"
-echo "  Fabricante: $(lscpu | grep -E "AMD|Intel|ARM" | head -1 || echo "No detectado")"
-echo "  Modelo: $(lscpu | grep "Model name" | cut -d: -f2 | xargs)"
-echo "  Arquitectura: $(lscpu | grep "Architecture" | cut -d: -f2 | xargs)"
-echo
 
-# 2. Velocidad
+# Fabricante
+if grep -qi "AMD" /proc/cpuinfo 2>/dev/null; then
+    echo "  Fabricante: AMD 🟣"
+elif grep -qi "Intel" /proc/cpuinfo 2>/dev/null; then
+    echo "  Fabricante: Intel 🔵"
+elif grep -qi "ARM" /proc/cpuinfo 2>/dev/null; then
+    echo "  Fabricante: ARM 🟢"
+else
+    echo "  Fabricante: No detectado"
+fi
+
+# Modelo
+MODEL=$(grep "model name" /proc/cpuinfo | head -1 | cut -d: -f2 | xargs)
+if [ -n "$MODEL" ]; then
+    echo "  Modelo: $MODEL"
+fi
+
+# Arquitectura
+ARCH=$(lscpu | grep "Architecture" | cut -d: -f2 | xargs)
+if [ -n "$ARCH" ]; then
+    echo "  Arquitectura: $ARCH"
+fi
+
+# ============================================
+# 2. VELOCIDAD
+# ============================================
+echo
 echo "2️⃣ Velocidad:"
-if lscpu | grep -q "CPU max MHz"; then
-    MAX=$(lscpu | grep "CPU max MHz" | awk '{print $4}')
-    MIN=$(lscpu | grep "CPU min MHz" | awk '{print $4}')
-    echo "  Máxima: $MAX MHz"
-    echo "  Mínima: $MIN MHz"
+
+# Velocidad base
+if lscpu | grep -q "CPU MHz mín"; then
+    MIN_MHZ=$(lscpu | grep "CPU MHz mín" | awk '{print $4}' | cut -d',' -f1 | xargs)
+    MAX_MHZ=$(lscpu | grep "CPU MHz máx" | awk '{print $4}' | cut -d',' -f1 | xargs)
+    echo "  Mínima: $MIN_MHZ MHz"
+    echo "  Máxima: $MAX_MHZ MHz"
+elif lscpu | grep -q "CPU max MHz"; then
+    MAX_MHZ=$(lscpu | grep "CPU max MHz" | awk '{print $4}' | cut -d',' -f1 | xargs)
+    MIN_MHZ=$(lscpu | grep "CPU min MHz" | awk '{print $4}' | cut -d',' -f1 | xargs)
+    echo "  Mínima: $MIN_MHZ MHz"
+    echo "  Máxima: $MAX_MHZ MHz"
+else
+    echo "  No disponible"
 fi
 
-if [ -f /proc/cpuinfo ]; then
-    CURRENT=$(grep "MHz" /proc/cpuinfo | head -1 | awk '{print $4}')
-    echo "  Actual: $(printf "%.0f" $CURRENT) MHz"
+# Velocidad actual
+CURRENT_MHZ=$(grep "MHz" /proc/cpuinfo | head -1 | awk '{print $4}' | cut -d'.' -f1)
+if [ -n "$CURRENT_MHZ" ] && [ "$CURRENT_MHZ" -gt 0 ] 2>/dev/null; then
+    echo "  Actual: $CURRENT_MHZ MHz"
 fi
+
+# ============================================
+# 3. NÚCLEOS E HILOS
+# ============================================
 echo
-
-# 3. Núcleos e hilos
 echo "3️⃣ Núcleos e hilos:"
+
+# Núcleos físicos
 CORES=$(lscpu | grep "^CPU(s):" | awk '{print $2}')
-THREADS_PER_CORE=$(lscpu | grep "Thread(s) per core" | awk '{print $4}')
-SOCKETS=$(lscpu | grep "Socket(s)" | awk '{print $2}')
 echo "  Núcleos físicos: $CORES"
-echo "  Hilos por núcleo: $THREADS_PER_CORE"
-echo "  Total hilos: $((CORES * THREADS_PER_CORE))"
-echo "  Sockets: $SOCKETS"
-echo
 
-# 4. Caché
+# Hilos por núcleo
+THREADS=$(lscpu | grep "Thread(s) per core" | awk '{print $4}')
+if [ -n "$THREADS" ] && [ "$THREADS" -gt 0 ] 2>/dev/null; then
+    echo "  Hilos por núcleo: $THREADS"
+    TOTAL_THREADS=$((CORES * THREADS))
+    echo "  Total hilos: $TOTAL_THREADS"
+else
+    echo "  Total hilos: $CORES"
+fi
+
+# Sockets
+SOCKETS=$(lscpu | grep "Socket(s)" | awk '{print $2}')
+if [ -n "$SOCKETS" ]; then
+    echo "  Sockets: $SOCKETS"
+fi
+
+# ============================================
+# 4. CACHÉ
+# ============================================
+echo
 echo "4️⃣ Caché:"
-lscpu | grep "cache" | while read line; do
-    echo "  $line"
-done
-echo
 
-# 5. Tecnologías soportadas
+CACHE_INFO=$(lscpu | grep "cache" | head -5)
+if [ -n "$CACHE_INFO" ]; then
+    echo "$CACHE_INFO" | while read line; do
+        echo "  $line"
+    done
+else
+    # Intentar desde /proc/cpuinfo
+    CACHE_SIZE=$(grep "cache size" /proc/cpuinfo | head -1 | cut -d: -f2 | xargs)
+    if [ -n "$CACHE_SIZE" ]; then
+        echo "  L3 cache: $CACHE_SIZE"
+    fi
+fi
+
+# ============================================
+# 5. TECNOLOGÍAS SOPORTADAS
+# ============================================
+echo
 echo "5️⃣ Tecnologías soportadas:"
-if grep -q "vmx" /proc/cpuinfo 2>/dev/null; then
-    echo "  ✅ Virtualización (Intel VT-x)"
-elif grep -q "svm" /proc/cpuinfo 2>/dev/null; then
+
+# Virtualización
+if grep -q "svm" /proc/cpuinfo 2>/dev/null; then
     echo "  ✅ Virtualización (AMD-V)"
+elif grep -q "vmx" /proc/cpuinfo 2>/dev/null; then
+    echo "  ✅ Virtualización (Intel VT-x)"
 else
     echo "  ❌ Virtualización no soportada"
 fi
 
+# AVX2
 if grep -q "avx2" /proc/cpuinfo 2>/dev/null; then
     echo "  ✅ AVX2"
 fi
 
+# AVX-512
 if grep -q "avx512" /proc/cpuinfo 2>/dev/null; then
     echo "  ✅ AVX-512"
 fi
 
+# SSSE3
 if grep -q "ssse3" /proc/cpuinfo 2>/dev/null; then
     echo "  ✅ SSSE3"
 fi
 
+# SSE4.2
 if grep -q "sse4_2" /proc/cpuinfo 2>/dev/null; then
     echo "  ✅ SSE4.2"
 fi
-echo
 
-# 6. Temperatura
-echo "6️⃣ Temperatura:"
-if command -v sensors &>/dev/null; then
-    sensors | grep -E "Core|Temp" | while read line; do
-        echo "  $line"
-    done
-else
-    echo "  ℹ️ lm-sensors no instalado"
-    echo "  Instalar con: sudo apt install lm-sensors"
+# AES
+if grep -q "aes" /proc/cpuinfo 2>/dev/null; then
+    echo "  ✅ AES (cifrado)"
 fi
-echo
 
-# 7. Rendimiento
+# ============================================
+# 6. TEMPERATURA
+# ============================================
+echo
+echo "6️⃣ Temperatura:"
+
+if command -v sensors &>/dev/null; then
+    # Intentar obtener temperatura
+    TEMP=$(sensors 2>/dev/null | grep -E "Tctl|Tdie|Package|Core 0" | head -1)
+    if [ -n "$TEMP" ]; then
+        TEMP_VALUE=$(echo "$TEMP" | grep -o '[0-9]*\.[0-9]*' | head -1)
+        if [ -n "$TEMP_VALUE" ]; then
+            TEMP_INT=${TEMP_VALUE%.*}
+            if [ "$TEMP_INT" -gt 80 ]; then
+                echo -e "  ${RED}🔥 $TEMP${NC}"
+            elif [ "$TEMP_INT" -gt 70 ]; then
+                echo -e "  ${YELLOW}⚠️  $TEMP${NC}"
+            else
+                echo -e "  ${GREEN}✅ $TEMP${NC}"
+            fi
+        else
+            echo "  No disponible (ejecuta: sudo sensors)"
+        fi
+    else
+        echo "  No disponible (ejecuta: sudo sensors-detect --auto)"
+    fi
+else
+    echo "  No disponible (instala: sudo apt install lm-sensors)"
+fi
+
+# ============================================
+# 7. RENDIMIENTO
+# ============================================
+echo
 echo "7️⃣ Rendimiento:"
+
+# Carga
 LOAD=$(uptime | awk -F'load average:' '{print $2}' | xargs)
 echo "  Carga promedio: $LOAD"
+
+# Procesos
 echo "  Procesos: $(ps aux | wc -l)"
+
+# Uptime
 echo "  Uptime: $(uptime -p | sed 's/up //')"
 
 echo

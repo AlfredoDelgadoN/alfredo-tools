@@ -1,0 +1,62 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "⚡ Estado del NVMe"
+
+echo -e "${BLUE}🔍 Verificando estado del disco NVMe...${RESET}"
+separator
+
+# Detectar NVMe
+NVME_DEV=$(lsblk -d -o NAME,TYPE | grep disk | grep nvme | awk '{print $1}')
+
+if [ -z "$NVME_DEV" ]; then
+    echo "❌ No se encontró disco NVMe"
+    exit 1
+fi
+
+DEVICE="/dev/$NVME_DEV"
+
+echo "📀 Disco: $NVME_DEV"
+separator
+
+# Información básica
+echo "📋 Información básica:"
+sudo smartctl -a "$DEVICE" 2>/dev/null | grep -E "Model Number:|Serial Number:|Firmware Version:|NVMe Version:|Total NVM Capacity:" | while read line; do
+    echo "  $line"
+done
+
+echo
+echo "🌡️ Temperatura:"
+TEMP=$(sudo smartctl -A "$DEVICE" 2>/dev/null | grep "Temperature:" | awk '{print $2}')
+if [ -n "$TEMP" ]; then
+    if [ "$TEMP" -gt 70 ]; then
+        echo -e "  ${RED}🔥 $TEMP°C - CRÍTICA!${NC}"
+    elif [ "$TEMP" -gt 60 ]; then
+        echo -e "  ${YELLOW}⚠️  $TEMP°C - Elevada${NC}"
+    elif [ "$TEMP" -gt 50 ]; then
+        echo -e "  ${YELLOW}⚠️  $TEMP°C - Alta${NC}"
+    else
+        echo -e "  ${GREEN}✅ $TEMP°C - Normal${NC}"
+    fi
+fi
+
+echo
+echo "📊 Estado de salud:"
+sudo smartctl -H "$DEVICE" 2>/dev/null | grep "SMART overall-health" | while read line; do
+    if echo "$line" | grep -q "PASSED"; then
+        echo -e "  ${GREEN}✅ $line${NC}"
+    else
+        echo -e "  ${RED}❌ $line${NC}"
+    fi
+done
+
+echo
+echo "💾 Uso y desgaste:"
+sudo smartctl -A "$DEVICE" 2>/dev/null | grep -E "Percentage Used:|Data Units Read:|Data Units Written:|Power On Hours:" | while read line; do
+    echo "  $line"
+done
+
+echo
+ok "Estado del NVMe verificado"

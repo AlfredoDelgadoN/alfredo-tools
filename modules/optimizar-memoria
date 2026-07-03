@@ -1,0 +1,60 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🚀 Optimización de Memoria"
+
+echo -e "${BLUE}🔧 Aplicando optimizaciones de memoria...${RESET}"
+separator
+
+# 1. Verificar estado actual
+echo "1️⃣ Estado actual:"
+free -h
+echo
+
+# 2. Limpiar caché de memoria
+echo "2️⃣ Limpiando caché de memoria..."
+sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null 2>&1
+echo "  ✅ Caché limpiada"
+echo
+
+# 3. Verificar swap
+echo "3️⃣ Verificando swap..."
+SWAP_USED=$(free -g | awk '/Swap:/ {print $3}')
+if [ -n "$SWAP_USED" ] && [ "$SWAP_USED" -gt 0 ]; then
+    echo "  ⚠️ Se está usando swap (${SWAP_USED}GB)"
+    echo "  💡 Considera aumentar la RAM o cerrar aplicaciones"
+else
+    echo "  ✅ No se está usando swap"
+fi
+echo
+
+# 4. Procesos que más memoria consumen
+echo "4️⃣ Procesos con alto consumo de memoria:"
+ps aux --sort=-%mem | head -6 | tail -5 | while read line; do
+    mem=$(echo "$line" | awk '{print $4}')
+    cmd=$(echo "$line" | awk '{print $11}')
+    echo "  $cmd ($mem% MEM)"
+done
+echo
+
+# 5. Recomendaciones
+echo -e "${BLUE}💡 RECOMENDACIONES${RESET}"
+separator
+
+TOTAL_MEM=$(free -g | awk '/Mem:/ {print $2}')
+if [ "$TOTAL_MEM" -lt 4 ]; then
+    echo "  🔧 Memoria baja (${TOTAL_MEM}GB):"
+    echo "     • Cierra aplicaciones no utilizadas"
+    echo "     • Considera aumentar la RAM"
+elif [ "$TOTAL_MEM" -lt 8 ]; then
+    echo "  ℹ️ Memoria aceptable (${TOTAL_MEM}GB):"
+    echo "     • Ideal para navegación y ofimática"
+    echo "     • Cierra Chrome si notas lentitud"
+else
+    echo "  ✅ Memoria adecuada (${TOTAL_MEM}GB):"
+    echo "     • Soporta multitarea y aplicaciones pesadas"
+fi
+
+ok "Optimización completada"

@@ -1,0 +1,162 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "⏱️ Tiempo de Arranque del Sistema"
+
+echo -e "${BLUE}🔍 Analizando tiempos de arranque...${RESET}"
+separator
+
+# ============================================
+# 1. TIEMPO TOTAL DE ARRANQUE
+# ============================================
+echo "1️⃣ Tiempo total de arranque:"
+
+# Usar systemd-analyze
+if command -v systemd-analyze &>/dev/null; then
+    # Tiempo total
+    TOTAL_TIME=$(systemd-analyze 2>/dev/null | grep -o '.*s' | head -1)
+    if [ -n "$TOTAL_TIME" ]; then
+        echo "  ⏱️  $TOTAL_TIME"
+    fi
+    
+    # Tiempo de firmware (BIOS/UEFI)
+    FIRMWARE=$(systemd-analyze 2>/dev/null | grep -o 'firmware.*s' | head -1)
+    if [ -n "$FIRMWARE" ]; then
+        echo "  🔌 $FIRMWARE"
+    fi
+    
+    # Tiempo del cargador de arranque
+    LOADER=$(systemd-analyze 2>/dev/null | grep -o 'loader.*s' | head -1)
+    if [ -n "$LOADER" ]; then
+        echo "  📀 $LOADER"
+    fi
+    
+    # Tiempo del kernel
+    KERNEL=$(systemd-analyze 2>/dev/null | grep -o 'kernel.*s' | head -1)
+    if [ -n "$KERNEL" ]; then
+        echo "  🐧 $KERNEL"
+    fi
+    
+    # Tiempo de usuariospace (initrd)
+    INITRD=$(systemd-analyze 2>/dev/null | grep -o 'initrd.*s' | head -1)
+    if [ -n "$INITRD" ]; then
+        echo "  📦 $INITRD"
+    fi
+    
+    # Tiempo de userspace (servicios)
+    USERSPACE=$(systemd-analyze 2>/dev/null | grep -o 'userspace.*s' | head -1)
+    if [ -n "$USERSPACE" ]; then
+        echo "  ⚙️  $USERSPACE"
+    fi
+else
+    echo "  ℹ️ systemd-analyze no disponible"
+fi
+
+echo
+
+# ============================================
+# 2. SERVICIOS QUE MÁS DEMORAN
+# ============================================
+echo "2️⃣ Servicios que más demoran en arrancar:"
+
+if command -v systemd-analyze &>/dev/null; then
+    echo "  🔍 Top 5 servicios más lentos:"
+    systemd-analyze blame 2>/dev/null | head -6 | tail -5 | while read line; do
+        echo "    $line"
+    done
+else
+    echo "  ℹ️ No disponible"
+fi
+
+echo
+
+# ============================================
+# 3. ANÁLISIS DE ARRANQUE ANTERIOR
+# ============================================
+echo "3️⃣ Último arranque:"
+
+# Último reinicio
+LAST_BOOT=$(who -b 2>/dev/null | awk '{print $3" "$4}')
+if [ -n "$LAST_BOOT" ]; then
+    echo "  📅 Fecha y hora: $LAST_BOOT"
+fi
+
+# Tiempo desde el último arranque
+UPTIME=$(uptime -p | sed 's/up //')
+if [ -n "$UPTIME" ]; then
+    echo "  ⏱️  Tiempo activo: $UPTIME"
+fi
+
+echo
+
+# ============================================
+# 4. HISTÓRICO DE ARRANQUES
+# ============================================
+echo "4️⃣ Histórico de últimos arranques:"
+
+# Últimos 5 reinicios
+echo "  📋 Últimos 5 reinicios:"
+last reboot 2>/dev/null | head -6 | tail -5 | while read line; do
+    echo "    $line"
+done
+
+echo
+
+# ============================================
+# 5. ANÁLISIS DE RENDIMIENTO
+# ============================================
+echo "5️⃣ Análisis de rendimiento:"
+
+# Verificar si el tiempo es bueno
+if command -v systemd-analyze &>/dev/null; then
+    TOTAL_SECS=$(systemd-analyze 2>/dev/null | grep -o '=[0-9.]*s' | head -1 | grep -o '[0-9.]*')
+    if [ -n "$TOTAL_SECS" ]; then
+        TOTAL_INT=${TOTAL_SECS%.*}
+        echo -n "  📊 Evaluación: "
+        if [ "$TOTAL_INT" -lt 15 ]; then
+            echo -e "${GREEN}✅ Arranque EXCELENTE (menos de 15s)${NC}"
+        elif [ "$TOTAL_INT" -lt 30 ]; then
+            echo -e "${GREEN}✅ Arranque BUENO (menos de 30s)${NC}"
+        elif [ "$TOTAL_INT" -lt 60 ]; then
+            echo -e "${YELLOW}⚠️  Arranque ACEPTABLE (menos de 60s)${NC}"
+        else
+            echo -e "${RED}❌ Arranque LENTO (más de 60s)${NC}"
+            echo "  💡 Considera deshabilitar servicios innecesarios"
+        fi
+    fi
+fi
+
+echo
+
+# ============================================
+# 6. RECOMENDACIONES
+# ============================================
+echo -e "${BLUE}💡 RECOMENDACIONES${RESET}"
+separator
+
+if command -v systemd-analyze &>/dev/null; then
+    # Verificar si hay servicios problemáticos
+    SLOW_SERVICES=$(systemd-analyze blame 2>/dev/null | head -3 | grep -o 's.*' | head -1)
+    if [ -n "$SLOW_SERVICES" ]; then
+        echo "  🔧 Servicios lentos detectados:"
+        echo "     • Usa: systemd-analyze blame para ver todos"
+        echo "     • Deshabilita servicios innecesarios:"
+        echo "       sudo systemctl disable [servicio]"
+        echo "     • Los servicios que más demoran:"
+        systemd-analyze blame 2>/dev/null | head -3 | while read line; do
+            echo "       $line"
+        done
+    fi
+    
+    # Sugerencia para Huawei
+    echo
+    echo "  📌 Optimizaciones para Huawei:"
+    echo "     • Usa SSD (NVMe) para arranque más rápido"
+    echo "     • Desactiva servicios innecesarios"
+    echo "     • Usa 'quiet splash' en grub"
+fi
+
+echo
+ok "Análisis de tiempo de arranque completado"

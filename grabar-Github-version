@@ -1,5 +1,5 @@
 git add .
-git commit -m "v0.7 - Diagnostico de trajeta de video"
-git tag -a v0.7 -m "Alfredo Tools v0.7"
+git commit -m "v0.9.1 - Diagnostico MAC Book Pro 2010"
+git tag -a v0.9.1 -m "Alfredo Tools v0.9.1"
 git push
-git push origin v0.7
+git push origin v0.9.1

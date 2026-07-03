@@ -1,0 +1,84 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "📋 Último Arranque del Sistema"
+
+echo -e "${BLUE}🔍 Información del último arranque...${RESET}"
+separator
+
+# ============================================
+# 1. FECHA Y HORA DEL ÚLTIMO ARRANQUE
+# ============================================
+echo "1️⃣ Último arranque:"
+
+# Último reinicio con who
+LAST_BOOT=$(who -b 2>/dev/null | awk '{print $3" "$4}')
+if [ -n "$LAST_BOOT" ]; then
+    echo "  📅 Fecha: $LAST_BOOT"
+else
+    # Alternativa con last
+    LAST_REBOOT=$(last reboot 2>/dev/null | head -1)
+    if [ -n "$LAST_REBOOT" ]; then
+        echo "  📅 $LAST_REBOOT"
+    fi
+fi
+
+# ============================================
+# 2. TIEMPO DE ARRANQUE DETALLADO
+# ============================================
+echo
+echo "2️⃣ Tiempo de arranque detallado:"
+
+if command -v systemd-analyze &>/dev/null; then
+    systemd-analyze 2>/dev/null | head -5
+else
+    echo "  ℹ️ No disponible"
+fi
+
+# ============================================
+# 3. PROCESOS CRÍTICOS AL ARRANQUE
+# ============================================
+echo
+echo "3️⃣ Procesos críticos al arranque:"
+
+# Verificar procesos esenciales
+PROCESOS=("gdm3" "NetworkManager" "pipewire" "cron" "bluetooth")
+for proc in "${PROCESOS[@]}"; do
+    if systemctl is-active --quiet $proc 2>/dev/null; then
+        echo -e "  ${GREEN}✅ $proc: Activo${NC}"
+    else
+        echo -e "  ${YELLOW}⚠️  $proc: Inactivo${NC}"
+    fi
+done
+
+echo
+# ============================================
+# 4. LOGS DE ARRANQUE
+# ============================================
+echo "4️⃣ Logs de arranque:"
+
+# Mostrar errores del último arranque
+echo "  🔍 Errores del último arranque:"
+sudo journalctl -b -p 3 2>/dev/null | tail -5 | while read line; do
+    echo "    $line"
+done
+
+# ============================================
+# 5. SUGERENCIAS
+# ============================================
+echo
+echo -e "${BLUE}💡 SUGERENCIAS${RESET}"
+separator
+
+echo "  🔧 Si el arranque es lento:"
+echo "     • Ejecuta: alfredo tiempo-arranque"
+echo "     • Verifica servicios innecesarios"
+echo "     • Usa: systemd-analyze blame"
+echo
+echo "  💾 Para optimizar el arranque:"
+echo "     • sudo systemctl disable [servicio]"
+echo "     • sudo systemctl mask [servicio]"
+
+ok "Información del último arranque completada"

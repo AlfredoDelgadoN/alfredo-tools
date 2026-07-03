@@ -1,0 +1,136 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🔍 Diagnóstico de Memoria"
+
+echo -e "${BLUE}🔧 Analizando configuración de memoria...${RESET}"
+separator
+
+# ============================================
+# 1. INFORMACIÓN DEL FABRICANTE Y MODELO
+# ============================================
+echo "1️⃣ Información del sistema:"
+
+# Marca
+BRAND=$(sudo dmidecode -t system 2>/dev/null | grep "Manufacturer:" | head -1 | cut -d: -f2 | xargs)
+if [ -n "$BRAND" ]; then
+    echo "  Fabricante: $BRAND"
+fi
+
+# Modelo
+MODEL=$(sudo dmidecode -t system 2>/dev/null | grep "Product Name:" | head -1 | cut -d: -f2 | xargs)
+if [ -n "$MODEL" ]; then
+    echo "  Modelo: $MODEL"
+fi
+
+# Número de serie
+SERIAL=$(sudo dmidecode -t system 2>/dev/null | grep "Serial Number:" | head -1 | cut -d: -f2 | xargs)
+if [ -n "$SERIAL" ]; then
+    echo "  Serial: $SERIAL"
+fi
+
+echo
+
+# ============================================
+# 2. ANÁLISIS DE SLOTS DE MEMORIA
+# ============================================
+echo "2️⃣ Análisis de slots de memoria:"
+
+# Verificar slots con dmidecode
+MEMORY_INFO=$(sudo dmidecode -t memory 2>/dev/null)
+
+# Verificar si hay slots disponibles
+SLOTS=$(echo "$MEMORY_INFO" | grep -c "Memory Device$")
+echo "  Slots totales: $SLOTS"
+
+# Verificar slots ocupados
+OCCUPIED=$(echo "$MEMORY_INFO" | grep -A 5 "Memory Device" | grep "Size:" | grep -v "No Module Installed" | grep -v "Not Installed" | wc -l)
+echo "  Slots ocupados: $OCCUPIED"
+
+# Verificar slots libres
+FREE_SLOTS=$((SLOTS - OCCUPIED))
+echo "  Slots libres: $FREE_SLOTS"
+
+echo
+
+# ============================================
+# 3. DETERMINAR SI ES UPGRADABLE
+# ============================================
+echo "3️⃣ Evaluación de capacidad de mejora:"
+
+# Verificar si es soldada (Huawei común)
+IS_SOLDERED=false
+
+# Si es Huawei y tiene menos de 2 slots ocupados
+if echo "$BRAND" | grep -qi "Huawei" || echo "$MODEL" | grep -qi "Huawei"; then
+    # Verificar si la memoria está soldada
+    if echo "$MEMORY_INFO" | grep -q "Row Of Chips"; then
+        IS_SOLDERED=true
+    fi
+fi
+
+# Análisis
+if [ "$FREE_SLOTS" -gt 0 ]; then
+    echo -e "  ${GREEN}✅ Hay slots libres disponibles${NC}"
+    echo "  💡 Puedes agregar más memoria:"
+    echo "     • Slot(s) libre(s): $FREE_SLOTS"
+    echo "     • Tipo: DDR4"
+    echo "     • Velocidad máxima: 2667 MT/s"
+elif [ "$IS_SOLDERED" = true ] || echo "$MEMORY_INFO" | grep -q "Row Of Chips"; then
+    echo -e "  ${YELLOW}⚠️  Memoria soldada a la placa base${NC}"
+    echo "  ℹ️ No es posible aumentar la memoria físicamente"
+    echo
+    echo "  📌 Alternativas para mejorar el rendimiento:"
+    echo "     • Cerrar aplicaciones no utilizadas"
+    echo "     • Usar zram (compresión de memoria)"
+    echo "     • Optimizar el sistema (deshabilitar servicios innecesarios)"
+    echo "     • Usar un gestor de ventanas más ligero (LXQt ya lo usas)"
+else
+    echo -e "  ${YELLOW}⚠️  No se pudo determinar con certeza${NC}"
+    echo "  ℹ️ Consulta el manual de tu equipo"
+fi
+
+echo
+
+# ============================================
+# 4. RECOMENDACIONES PARA HUAWEI
+# ============================================
+echo "4️⃣ Recomendaciones específicas:"
+
+# Detectar si es Huawei
+if echo "$BRAND" | grep -qi "Huawei" || echo "$MODEL" | grep -qi "Huawei"; then
+    echo "  📱 Equipo Huawei detectado"
+    echo "  🔧 La memoria en estos equipos suele ser soldada"
+    echo
+    echo "  💡 Para mejorar el rendimiento:"
+    echo "     • Usa zram:"
+    echo "       sudo apt install zram-config"
+    echo "     • Reduce el swappiness:"
+    echo "       echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.conf"
+    echo "     • Usa Firefox en lugar de Chrome (menos consumo de RAM)"
+    echo "     • Desactiva efectos visuales innecesarios"
+fi
+
+echo
+echo -e "${BLUE}📊 RESUMEN${RESET}"
+separator
+
+# Resumen final
+if [ "$FREE_SLOTS" -gt 0 ]; then
+    echo -e "  ${GREEN}✅ UPGRADABLE: Puedes agregar memoria${NC}"
+    echo "     • Slots libres: $FREE_SLOTS"
+    echo "     • Tipo: DDR4 SODIMM"
+    echo "     • Capacidad máxima sugerida: $((FREE_SLOTS * 8)) GB adicionales"
+elif [ "$IS_SOLDERED" = true ] || echo "$MEMORY_INFO" | grep -q "Row Of Chips"; then
+    echo -e "  ${YELLOW}⚠️  NO UPGRADABLE: Memoria soldada${NC}"
+    echo "     • 8 GB DDR4 (2 módulos de 4 GB)"
+    echo "     • Velocidad: 2400 MT/s"
+    echo "     • Capacidad fija: No se puede aumentar"
+else
+    echo -e "  ${YELLOW}⚠️  NO DETERMINADO: Consulta el manual${NC}"
+fi
+
+echo
+ok "Diagnóstico de memoria completado"
