@@ -1,0 +1,94 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🖥️ Solución de Problemas HDMI"
+
+echo -e "${BLUE}🔍 Diagnóstico de conexiones HDMI...${RESET}"
+separator
+
+# 1. Detectar monitores
+echo "1️⃣ Monitores detectados:"
+xrandr --listmonitors 2>/dev/null
+echo
+
+# 2. Verificar estado de HDMI
+echo "2️⃣ Estado de conexiones HDMI:"
+xrandr 2>/dev/null | grep -E "HDMI|eDP|connected" | while read line; do
+    if echo "$line" | grep -q "connected"; then
+        echo -e "  ${GREEN}✅ $line${NC}"
+    else
+        echo -e "  ${YELLOW}⚠️  $line${NC}"
+    fi
+done
+echo
+
+# 3. Opciones de solución
+echo "3️⃣ ¿Qué deseas hacer?"
+echo "  1) Reiniciar detección de monitores (rápido)"
+echo "  2) Desconectar y reconectar HDMI (simulado)"
+echo "  3) Reconfigurar pantallas (extendido)"
+echo "  4) Solo laptop (apagar HDMI)"
+echo "  5) Solo monitor externo (apagar laptop)"
+echo "  6) Diagnóstico completo"
+echo
+read -p "Opción (1-6): " OPCION
+
+case $OPCION in
+    1)
+        echo "🔄 Reiniciando detección de monitores..."
+        xrandr --auto
+        echo -e "  ${GREEN}✅ Detección reiniciada${NC}"
+        ;;
+    2)
+        echo "📺 Simulando desconexión/reconexión HDMI..."
+        echo "  Apagando HDMI..."
+        xrandr --output HDMI-A-0 --off
+        sleep 2
+        echo "  Encendiendo HDMI..."
+        xrandr --output HDMI-A-0 --auto --right-of eDP
+        echo -e "  ${GREEN}✅ HDMI reconectado${NC}"
+        ;;
+    3)
+        echo "🖥️ Configurando pantalla extendida..."
+        xrandr --output eDP --auto --output HDMI-A-0 --auto --right-of eDP
+        echo -e "  ${GREEN}✅ Modo extendido configurado${NC}"
+        ;;
+    4)
+        echo "💻 Cambiando a solo laptop..."
+        xrandr --output HDMI-A-0 --off --output eDP --auto
+        echo -e "  ${GREEN}✅ Solo laptop activa${NC}"
+        ;;
+    5)
+        echo "🖥️ Cambiando a solo monitor externo..."
+        xrandr --output eDP --off --output HDMI-A-0 --auto
+        echo -e "  ${GREEN}✅ Solo monitor externo activo${NC}"
+        ;;
+    6)
+        echo "🔍 Ejecutando diagnóstico completo..."
+        echo
+        echo "=== ESTADO DE XRANDR ==="
+        xrandr --verbose | grep -E "connected|HDMI|eDP|VGA"
+        echo
+        echo "=== LOGS RECIENTES ==="
+        sudo journalctl --since "5 minutes ago" | grep -i "gdm\|xorg\|display" | tail -10
+        echo
+        echo "=== SUGERENCIAS ==="
+        echo "  • Si ves pantalla negra: desconecta y reconecta el HDMI físicamente"
+        echo "  • Si no detecta el monitor: prueba con otro cable HDMI"
+        echo "  • Si el problema persiste: alfredo diagnostico"
+        ;;
+esac
+
+echo
+echo "4️⃣ Estado final:"
+xrandr --listmonitors 2>/dev/null
+
+echo
+ok "Solución HDMI completada"
+echo
+echo "📌 Si el problema persiste:"
+echo "  • Desconecta físicamente el cable HDMI y vuelve a conectarlo"
+echo "  • Ejecuta: alfredo diagnostico"
+echo "  • Verifica que el monitor esté encendido y en la entrada correcta"

@@ -1,0 +1,46 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "📋 Historial de Reparaciones"
+
+if [ ! -f ~/.alfredo-repair.log ]; then
+    echo "ℹ️ No hay historial de reparaciones"
+    echo
+    echo "Para crear un historial, ejecuta:"
+    echo "  alfredo reparar-todo"
+    exit 0
+fi
+
+echo -e "${BLUE}📜 Historial completo:${RESET}"
+separator
+
+# Mostrar historial con colores
+cat ~/.alfredo-repair.log | while read line; do
+    if echo "$line" | grep -q "ERROR"; then
+        echo -e "${RED}$line${NC}"
+    elif echo "$line" | grep -q "✅"; then
+        echo -e "${GREEN}$line${NC}"
+    elif echo "$line" | grep -q "⚠️"; then
+        echo -e "${YELLOW}$line${NC}"
+    else
+        echo "$line"
+    fi
+done
+
+echo
+echo -e "${BLUE}📊 Estadísticas:${RESET}"
+separator
+
+# Contar reparaciones
+TOTAL=$(grep -c "✅" ~/.alfredo-repair.log)
+echo "  • Reparaciones exitosas: $TOTAL"
+
+# Última reparación
+ULTIMA=$(tail -1 ~/.alfredo-repair.log)
+echo "  • Última reparación: $ULTIMA"
+
+echo
+echo -e "${BLUE}💡 Para ver estado actual:${RESET}"
+echo "  alfredo estado-actual"

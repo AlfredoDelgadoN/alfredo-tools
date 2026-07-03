@@ -1,0 +1,56 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🌡️ Temperatura de CPU"
+
+echo -e "${BLUE}🔍 Monitoreando temperatura de CPU...${RESET}"
+separator
+
+# Verificar si lm-sensors está instalado
+if ! command -v sensors &>/dev/null; then
+    echo "❌ lm-sensors no está instalado"
+    echo "   Instala con: sudo apt install lm-sensors"
+    echo "   Luego ejecuta: sudo sensors-detect --auto"
+    exit 1
+fi
+
+# Monitoreo en tiempo real
+echo "🔄 Monitoreando temperatura (actualiza cada 2 segundos)"
+echo "   Presiona Ctrl+C para salir"
+echo
+
+while true; do
+    clear
+    title "🌡️ Temperatura de CPU"
+    echo -e "${BLUE}🕒 $(date '+%Y-%m-%d %H:%M:%S')${RESET}"
+    separator
+    
+    # Obtener temperatura de todos los núcleos
+    sensors 2>/dev/null | grep -E "Core|CPU|Tctl|Tdie|Package" | while read line; do
+        # Extraer nombre y temperatura
+        NAME=$(echo "$line" | cut -d: -f1 | xargs)
+        TEMP=$(echo "$line" | grep -o '[0-9]*\.[0-9]*' | head -1)
+        
+        if [ -n "$TEMP" ]; then
+            TEMP_INT=${TEMP%.*}
+            # Color según temperatura
+            if [ "$TEMP_INT" -gt 80 ]; then
+                COLOR="${RED}"
+                ICON="🔥"
+            elif [ "$TEMP_INT" -gt 70 ]; then
+                COLOR="${YELLOW}"
+                ICON="⚠️"
+            else
+                COLOR="${GREEN}"
+                ICON="✅"
+            fi
+            echo -e "  $NAME: ${COLOR}${TEMP}°C${NC} $ICON"
+        fi
+    done
+    
+    echo
+    echo -e "${YELLOW}⏱️  Actualizando cada 2 segundos... (Ctrl+C para salir)${NC}"
+    sleep 2
+done

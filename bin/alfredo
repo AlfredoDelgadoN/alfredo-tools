@@ -12,22 +12,49 @@ export ALFREDO_BASE="$BASE"
 
 show_help() {
     echo "========================================="
-    echo "          Alfredo Tools v0.6"
+    echo "          Alfredo Tools v0.9"
     echo "========================================="
     echo
-    echo "Uso:"
-    echo "  alfredo salud          - Estado del sistema"
-    echo "  alfredo wifi           - Info WiFi"
-    echo "  alfredo red            - Info de red"
+    echo "🛠️  DIAGNÓSTICO Y REPARACIÓN:"
+    echo "  alfredo diagnostico    - Diagnóstico completo del sistema"
+    echo "  alfredo analizar-logs  - Analizar logs (últimos 30 min)"
+    echo "  alfredo verificar-todo - Verificación completa del sistema"
+    echo "  alfredo estado-actual  - Estado actual en tiempo real"
+    echo "  alfredo historial      - Historial de reparaciones"
+    echo
+    echo "🔧 REPARACIÓN:"
+    echo "  alfredo reparar        - Reparación automática"
+    echo "  alfredo reparar-todo   - Reparación completa"
+    echo "  alfredo fix-amd        - Solución específica AMD"
+    echo "  alfredo fix-audio      - Solución de audio"
+    echo "  alfredo fix-hdmi       - Solución problemas HDMI"
+    echo "  alfredo fix-screen     - Solución rápida pantalla negra"
+    echo "  alfredo screen-fix-quick - Solución rápida pantalla negra ⚡"
+    echo
+    echo "📊 SISTEMA:"
+    echo "  alfredo salud          - Estado completo del sistema"
+    echo "  alfredo info           - Resumen rápido del sistema"
+    echo "  alfredo procesador     - Información del procesador"
+    echo "  alfredo memoria        - Información de memoria"
+    echo "  alfredo discos         - Información de discos"
+    echo "  alfredo red            - Información de red"
+    echo "  alfredo wifi           - Información WiFi"
     echo "  alfredo speed          - Velocidad de Internet"
-    echo "  alfredo diagnostico    - Diagnóstico completo 🔍"
-    echo "  alfredo reparar        - Reparación automática 🔧"
-    echo "  alfredo fix-screen     - Solución rápida pantalla negra 🖥️"
-    echo "  alfredo setup-monitors - Configurar monitores 🖥️"
-    echo "  alfredo fix-amd        - Solución específica AMD 🟣"
+    echo
+    echo "🌡️  TEMPERATURA:"
+    echo "  alfredo temp-discos    - Monitorear temperatura de discos"
+    echo "  alfredo temp-discos-simple - Temperatura de discos (simple)"
+    echo "  alfredo temp-cpu       - Monitorear temperatura de CPU"
+    echo
+    echo "🖥️  PANTALLAS:"
+    echo "  alfredo setup-monitors - Configurar monitores"
+    echo "  alfredo monitor-screen - Monitorear cambios en pantallas"
+    echo
+    echo "📖 AYUDA:"
     echo "  alfredo help           - Esta ayuda"
     echo "  alfredo version        - Versión"
     echo
+    echo "💡 Ejemplo: alfredo salud"
 }
 
 check_module() {
@@ -48,15 +75,39 @@ check_module() {
 }
 
 case "$1" in
-    salud|wifi|red|speed|diagnostico|reparar|fix-screen|setup-monitors|fix-amd)
+    # Diagnóstico
+    diagnostico|analizar-logs|verificar-todo|estado-actual|historial)
         check_module "$1"
         exec "$BASE/modules/$1"
         ;;
+    # Reparación
+    reparar|reparar-todo|fix-amd|fix-audio|fix-hdmi|fix-screen|screen-fix-quick)
+        check_module "$1"
+        exec "$BASE/modules/$1"
+        ;;
+    # Sistema
+    salud|info|procesador|memoria|discos|red|wifi|speed)
+        check_module "$1"
+        exec "$BASE/modules/$1"
+        ;;
+    # Temperatura
+    temp-discos|temp-discos-simple|temp-cpu)
+        check_module "$1"
+        exec "$BASE/modules/$1"
+        ;;
+    # Pantallas
+    setup-monitors|monitor-screen)
+        check_module "$1"
+        exec "$BASE/modules/$1"
+        ;;
+    # Ayuda
     help|--help|-h)
         show_help
         ;;
     version|--version|-v)
-        echo "Alfredo Tools v0.6"
+        echo "Alfredo Tools v0.9"
+        echo "Sistema de diagnóstico y mantenimiento"
+        echo "Ejecuta 'alfredo help' para ver todos los módulos"
         ;;
     *)
         show_help

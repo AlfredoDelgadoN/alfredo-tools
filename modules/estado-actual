@@ -1,0 +1,103 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "📊 Estado Actual del Sistema"
+
+echo -e "${BLUE}🕒 Hora actual: $(date '+%Y-%m-%d %H:%M:%S')${RESET}"
+separator
+
+# 1. Uptime del sistema
+echo "1️⃣ Tiempo de actividad:"
+uptime -p
+echo
+
+# 2. Último reinicio
+echo "2️⃣ Último reinicio:"
+last reboot 2>/dev/null | head -2 | tail -1 | awk '{print "  " $4" "$5" "$6" "$7" "$8" "$9}' || echo "  No disponible"
+echo
+
+# 3. Estado de GDM
+echo "3️⃣ Estado de GDM:"
+if systemctl is-active --quiet gdm3 2>/dev/null; then
+    echo -e "  ${GREEN}✅ GDM activo${NC}"
+else
+    echo -e "  ${RED}❌ GDM inactivo${NC}"
+fi
+echo
+
+# 4. Errores en los últimos 5 minutos
+echo "4️⃣ Errores en los últimos 5 minutos:"
+ERRORES_RECIENTES=$(sudo journalctl --since "5 minutes ago" -p 3 -b 2>/dev/null | grep -E "error|fail|critical" | head -5)
+if [ -n "$ERRORES_RECIENTES" ]; then
+    echo -e "  ${RED}❌ Errores recientes:${NC}"
+    echo "$ERRORES_RECIENTES" | sed 's/^/    /'
+else
+    echo -e "  ${GREEN}✅ Sin errores en los últimos 5 minutos${NC}"
+fi
+echo
+
+# 5. Servicios principales
+echo "5️⃣ Servicios principales:"
+
+# GDM
+if systemctl is-active --quiet gdm3 2>/dev/null; then
+    echo -e "  ${GREEN}✅ gdm3: activo${NC}"
+else
+    echo -e "  ${RED}❌ gdm3: inactivo${NC}"
+fi
+
+# UDEV
+if systemctl is-active --quiet systemd-udevd 2>/dev/null; then
+    echo -e "  ${GREEN}✅ systemd-udevd: activo${NC}"
+else
+    echo -e "  ${RED}❌ systemd-udevd: inactivo${NC}"
+fi
+
+# PipeWire (VERIFICACIÓN CORREGIDA)
+if systemctl --user is-active --quiet pipewire 2>/dev/null; then
+    echo -e "  ${GREEN}✅ pipewire: activo (usuario)${NC}"
+elif pgrep -x "pipewire" >/dev/null; then
+    echo -e "  ${GREEN}✅ pipewire: activo (proceso en ejecución)${NC}"
+else
+    echo -e "  ${RED}❌ pipewire: inactivo${NC}"
+fi
+
+# NetworkManager
+if systemctl is-active --quiet NetworkManager 2>/dev/null; then
+    echo -e "  ${GREEN}✅ NetworkManager: activo${NC}"
+else
+    echo -e "  ${RED}❌ NetworkManager: inactivo${NC}"
+fi
+echo
+
+# 6. Última ejecución de reparación
+echo "6️⃣ Última ejecución de reparación:"
+if [ -f ~/.alfredo-repair.log ]; then
+    echo "  📅 Última reparación: $(stat -c %y ~/.alfredo-repair.log 2>/dev/null | cut -d'.' -f1)"
+    echo "  📋 Ver logs: cat ~/.alfredo-repair.log"
+else
+    echo "  ℹ️ No se ha ejecutado reparación aún"
+fi
+
+# 7. Verificación adicional de audio
+echo
+echo "7️⃣ Estado del audio:"
+if pactl info 2>/dev/null | grep -q "Server Name.*PipeWire"; then
+    echo -e "  ${GREEN}✅ PipeWire funcionando correctamente${NC}"
+    echo "  🔊 Dispositivos de audio disponibles:"
+    pactl list short sinks 2>/dev/null | while read line; do
+        echo "    • $(echo "$line" | awk '{print $2}')"
+    done | head -3
+else
+    echo -e "  ${YELLOW}⚠️  PipeWire no está como servidor de audio principal${NC}"
+fi
+
+echo
+echo -e "${BLUE}📌 Recomendaciones:${RESET}"
+separator
+echo "  • Si hay errores recientes: alfredo analizar-logs 5"
+echo "  • Si hay errores antiguos: alfredo analizar-logs 120"
+echo "  • Para reparar todo: alfredo reparar-todo"
+echo "  • Para ver estado detallado: alfredo verificar-todo"

@@ -1,0 +1,79 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🔍 Verificación Completa del Sistema"
+
+echo "📋 Verificando todos los problemas conocidos..."
+separator
+
+# 1. Verificar UDEV (sane)
+echo "1️⃣ UDEV (sane):"
+if sudo journalctl -xe 2>/dev/null | grep -i "libsane_rules_end" | tail -3 | grep -q .; then
+    echo "  ⚠️ Aún hay errores de sane en logs"
+    sudo journalctl -xe 2>/dev/null | grep -i "libsane_rules_end" | tail -3
+else
+    echo "  ✅ Error de sane resuelto"
+fi
+
+# 2. Verificar GDM
+echo
+echo "2️⃣ GDM (pantalla):"
+if sudo journalctl -xe 2>/dev/null | grep -i "Gdm: on_display" | tail -3 | grep -q .; then
+    echo "  ⚠️ Errores de GDM detectados"
+    sudo journalctl -xe 2>/dev/null | grep -i "Gdm: on_display" | tail -3
+else
+    echo "  ✅ Sin errores de GDM recientes"
+fi
+
+# 3. Verificar Keyring
+echo
+echo "3️⃣ Keyring:"
+if sudo journalctl -xe 2>/dev/null | grep -i "gkr-pam" | tail -3 | grep -q .; then
+    echo "  ⚠️ Errores de keyring detectados"
+    sudo journalctl -xe 2>/dev/null | grep -i "gkr-pam" | tail -3
+else
+    echo "  ✅ Sin errores de keyring recientes"
+fi
+
+# 4. Verificar PipeWire
+echo
+echo "4️⃣ PipeWire (audio):"
+if sudo journalctl -xe 2>/dev/null | grep -i "pipewire.*Permiso denegado" | tail -3 | grep -q .; then
+    echo "  ⚠️ Errores de PipeWire detectados"
+    sudo journalctl -xe 2>/dev/null | grep -i "pipewire" | tail -3
+else
+    echo "  ✅ Sin errores de PipeWire recientes"
+fi
+
+# 5. Verificar GLib
+echo
+echo "5️⃣ GLib:"
+if sudo journalctl -xe 2>/dev/null | grep -i "GLib: Source" | tail -3 | grep -q .; then
+    echo "  ⚠️ Errores de GLib detectados"
+    sudo journalctl -xe 2>/dev/null | grep -i "GLib: Source" | tail -3
+else
+    echo "  ✅ Sin errores de GLib recientes"
+fi
+
+echo
+echo "📊 RESUMEN:"
+separator
+
+# Contar problemas
+PROBLEMAS=0
+if sudo journalctl -xe 2>/dev/null | grep -i "libsane_rules_end" | tail -3 | grep -q .; then PROBLEMAS=$((PROBLEMAS+1)); fi
+if sudo journalctl -xe 2>/dev/null | grep -i "Gdm: on_display" | tail -3 | grep -q .; then PROBLEMAS=$((PROBLEMAS+1)); fi
+if sudo journalctl -xe 2>/dev/null | grep -i "gkr-pam" | tail -3 | grep -q .; then PROBLEMAS=$((PROBLEMAS+1)); fi
+if sudo journalctl -xe 2>/dev/null | grep -i "pipewire.*Permiso denegado" | tail -3 | grep -q .; then PROBLEMAS=$((PROBLEMAS+1)); fi
+if sudo journalctl -xe 2>/dev/null | grep -i "GLib: Source" | tail -3 | grep -q .; then PROBLEMAS=$((PROBLEMAS+1)); fi
+
+if [ $PROBLEMAS -eq 0 ]; then
+    echo "  ✅ ¡Todos los problemas resueltos!"
+else
+    echo "  ⚠️ $PROBLEMAS problema(s) aún presentes"
+    echo
+    echo "  Para resolverlos, ejecuta:"
+    echo "    alfredo reparar-todo"
+fi

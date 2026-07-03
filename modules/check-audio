@@ -1,0 +1,81 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🔍 Verificación Rápida de Audio"
+
+echo -e "${BLUE}📊 Estado del audio...${RESET}"
+separator
+
+# 1. Verificar y configurar sink por defecto si no existe
+DEFAULT_SINK=$(pactl info 2>/dev/null | grep "Default Sink" | awk '{print $3}' | head -1)
+
+if [ -z "$DEFAULT_SINK" ] || [ "$DEFAULT_SINK" = "" ]; then
+    echo -e "  ${YELLOW}⚠️  No hay sink por defecto, configurando...${NC}"
+    
+    # Buscar el primer sink disponible
+    FIRST_SINK=$(pactl list short sinks 2>/dev/null | head -1 | awk '{print $2}')
+    if [ -n "$FIRST_SINK" ]; then
+        pactl set-default-sink "$FIRST_SINK"
+        DEFAULT_SINK="$FIRST_SINK"
+        echo -e "  ${GREEN}✅ Sink configurado: $DEFAULT_SINK${NC}"
+    else
+        echo -e "  ${RED}❌ No se encontraron sinks de audio${NC}"
+        exit 1
+    fi
+else
+    echo -e "  ${GREEN}✅ Sink por defecto: $DEFAULT_SINK${NC}"
+fi
+
+# 2. Verificar si hay audio activo
+echo
+echo "🔊 Audio activo:"
+if pactl list short sink-inputs 2>/dev/null | grep -q "RUNNING"; then
+    echo -e "  ${GREEN}✅ Audio activo detectado${NC}"
+    echo "  Aplicaciones reproduciendo:"
+    pactl list short sink-inputs 2>/dev/null | while read line; do
+        if echo "$line" | grep -q "RUNNING"; then
+            SINK_ID=$(echo "$line" | awk '{print $1}')
+            APP=$(pactl list sink-inputs 2>/dev/null | grep -A 20 "Sink Input #$SINK_ID" | grep "application.process.binary" | head -1 | awk -F'"' '{print $2}')
+            if [ -n "$APP" ]; then
+                echo "    • $APP"
+            else
+                echo "    • Aplicación #$SINK_ID"
+            fi
+        fi
+    done
+else
+    echo -e "  ${YELLOW}⏸️  No hay audio reproduciéndose${NC}"
+    echo "  💡 Abre YouTube y reproduce un video para probar"
+fi
+
+# 3. Dispositivos disponibles
+echo
+echo "📊 Dispositivos disponibles:"
+pactl list short sinks 2>/dev/null | while read line; do
+    NAME=$(echo "$line" | awk '{print $2}')
+    if [ "$NAME" = "$DEFAULT_SINK" ]; then
+        echo -e "  ${GREEN}▶️  $NAME (PREDETERMINADO)${NC}"
+    else
+        echo -e "  ${BLUE}⏸️  $NAME${NC}"
+    fi
+done
+
+# 4. Volumen actual
+echo
+echo "🔊 Volumen:"
+pactl list sinks 2>/dev/null | grep -A 2 "State: RUNNING" | grep "Volume:" | head -1 | sed 's/^/  /' || echo "  ℹ️ No hay sinks en ejecución"
+
+echo
+# 5. Resumen final
+if [ -n "$DEFAULT_SINK" ]; then
+    echo -e "${GREEN}✅ Audio configurado correctamente${NC}"
+    echo -e "${BLUE}📌 Si no escuchas sonido:${NC}"
+    echo "  1. Verifica que el volumen no esté al mínimo"
+    echo "  2. Prueba con: speaker-test -t sine -f 440 -c 2"
+    echo "  3. Abre YouTube y reproduce un video"
+else
+    echo -e "${RED}❌ Audio no configurado${NC}"
+    echo "  Ejecuta: alfredo configurar-audio"
+fi

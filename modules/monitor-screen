@@ -1,0 +1,71 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "📊 Monitor de Pantallas"
+
+echo -e "${BLUE}🔄 Monitoreando cambios en pantallas...${RESET}"
+echo -e "${YELLOW}Presiona Ctrl+C para detener${RESET}"
+separator
+
+# Función para obtener estado actual de monitores
+get_monitor_state() {
+    xrandr --listmonitors 2>/dev/null | tail -n +2 | sort
+}
+
+# Función para obtener configuración detallada
+get_monitor_config() {
+    xrandr 2>/dev/null | grep -E " connected| connected primary" | while read line; do
+        MONITOR=$(echo "$line" | awk '{print $1}')
+        STATUS=$(echo "$line" | awk '{print $2}')
+        RES=$(echo "$line" | grep -oP '\d+x\d+' | head -1)
+        echo "$MONITOR:$STATUS:$RES"
+    done
+}
+
+# Guardar estado inicial
+PREV_STATE=$(get_monitor_state)
+PREV_CONFIG=$(get_monitor_config)
+FIRST_RUN=true
+
+echo "📺 Estado inicial:"
+xrandr --listmonitors 2>/dev/null
+echo
+
+echo -e "${BLUE}📋 Monitoreando... (actualiza cada 3 segundos)${RESET}"
+echo "   Eventos detectados:"
+echo
+
+while true; do
+    CURRENT_STATE=$(get_monitor_state)
+    CURRENT_CONFIG=$(get_monitor_config)
+    
+    # Detectar cambios
+    if [ "$CURRENT_STATE" != "$PREV_STATE" ] || [ "$CURRENT_CONFIG" != "$PREV_CONFIG" ]; then
+        echo
+        echo -e "${YELLOW}⚠️  $(date '+%H:%M:%S') - Cambio detectado en la configuración de monitores!${RESET}"
+        echo "📺 Nueva configuración:"
+        xrandr --listmonitors 2>/dev/null
+        
+        echo
+        echo "🔄 Reconfigurando automáticamente..."
+        xrandr --auto 2>/dev/null
+        
+        # Si hay HDMI, configurar extendido
+        if xrandr | grep -q "HDMI-A-0 connected"; then
+            xrandr --output HDMI-A-0 --auto --right-of eDP 2>/dev/null
+            echo "  ✅ HDMI configurado como extendido"
+        fi
+        
+        echo "  ✅ Configuración restaurada"
+        echo
+        echo -e "${BLUE}📋 Continuando monitoreo...${RESET}"
+        
+        # Actualizar estado
+        PREV_STATE="$CURRENT_STATE"
+        PREV_CONFIG="$CURRENT_CONFIG"
+    fi
+    
+    sleep 3
+done

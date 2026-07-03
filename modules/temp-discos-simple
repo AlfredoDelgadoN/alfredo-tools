@@ -1,0 +1,54 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🌡️ Temperatura de Discos (versión simple)"
+
+echo -e "${BLUE}🔍 Leyendo temperatura de discos...${RESET}"
+separator
+
+# Función para obtener temperatura
+get_temp() {
+    local DEVICE="$1"
+    
+    # Usar smartctl directamente
+    if command -v smartctl &>/dev/null; then
+        # Para NVMe
+        if echo "$DEVICE" | grep -q "nvme"; then
+            sudo smartctl -A "$DEVICE" 2>/dev/null | grep -E "^Temperature:" | awk '{print $2}' | sed 's/°C//'
+        else
+            # Para SATA/HDD
+            sudo smartctl -A "$DEVICE" 2>/dev/null | grep -E "Temperature_Celsius" | awk '{print $10}'
+        fi
+    fi
+}
+
+# Mostrar temperatura de cada disco
+for DISK in $(lsblk -d -o NAME,TYPE | grep disk | awk '{print $1}' | grep -v "zram\|loop"); do
+    DEVICE="/dev/$DISK"
+    TEMP=$(get_temp "$DEVICE")
+    
+    # Determinar tipo
+    if echo "$DISK" | grep -q "nvme"; then
+        TIPO="NVMe"
+    elif [ -f "/sys/block/$DISK/queue/rotational" ]; then
+        ROTA=$(cat "/sys/block/$DISK/queue/rotational" 2>/dev/null)
+        if [ "$ROTA" = "0" ]; then
+            TIPO="SSD"
+        else
+            TIPO="HDD"
+        fi
+    else
+        TIPO="?"
+    fi
+    
+    if [ -n "$TEMP" ] && [ "$TEMP" -gt 0 ] 2>/dev/null; then
+        echo -e "  📀 $DISK [$TIPO]: ${GREEN}${TEMP}°C${NC}"
+    else
+        echo -e "  📀 $DISK [$TIPO]: ${YELLOW}No disponible${NC}"
+    fi
+done
+
+echo
+ok "Temperatura de discos completada"

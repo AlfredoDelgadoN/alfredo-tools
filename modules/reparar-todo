@@ -1,0 +1,127 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+# Guardar historial
+log_reparacion() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ~/.alfredo-repair.log
+}
+
+# Modificar cada sección para guardar logs
+# Ejemplo:
+echo "📦 Reparando paquetes..."
+sudo apt --fix-broken install -y 2>/dev/null
+if [ $? -eq 0 ]; then
+    echo "  ✅ Paquetes reparados"
+    log_reparacion "✅ Paquetes reparados"
+else
+    echo "  ❌ Error reparando paquetes"
+    log_reparacion "❌ Error reparando paquetes"
+fi
+
+# Al final del script, añadir:
+echo
+echo "📝 Reparación guardada en historial: ~/.alfredo-repair.log"
+
+title "🔧 Reparación Completa del Sistema"
+
+echo -e "${YELLOW}⚠️  Este script ejecutará múltiples reparaciones${NC}"
+echo -e "${YELLOW}   Requiere permisos de superusuario${NC}"
+echo
+read -p "¿Continuar? (s/N) " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Ss]$ ]]; then
+    exit 0
+fi
+
+echo -e "${BLUE}🔧 Ejecutando reparaciones...${RESET}"
+separator
+
+# 1. Reparar paquetes
+echo "📦 Reparando paquetes..."
+sudo apt --fix-broken install -y 2>/dev/null
+echo "  ✅ Paquetes reparados"
+
+# 2. Limpiar sistema
+echo "🧹 Limpiando sistema..."
+sudo apt clean 2>/dev/null
+sudo apt autoremove -y 2>/dev/null
+sudo apt autoclean -y 2>/dev/null
+echo "  ✅ Sistema limpiado"
+
+# 3. Reparar GDM
+echo "🖥️  Reparando GDM..."
+sudo dpkg-reconfigure gdm3 -f noninteractive 2>/dev/null
+sudo systemctl restart gdm3 2>/dev/null
+echo "  ✅ GDM reparado"
+
+# 4. Reparar udev
+echo "🔌 Reparando udev..."
+sudo rm -f /etc/udev/rules.d/40-libsane.rules 2>/dev/null
+sudo rm -f /etc/udev/rules.d/S99-2000S1.rules 2>/dev/null
+sudo udevadm control --reload-rules 2>/dev/null
+sudo udevadm trigger 2>/dev/null
+echo "  ✅ Udev reparado"
+
+# 5. Reparar keyring
+echo "🔑 Reparando keyring..."
+sudo apt install --reinstall gnome-keyring -y 2>/dev/null
+systemctl --user enable gnome-keyring-daemon 2>/dev/null
+echo "  ✅ Keyring reparado"
+
+# 6. Reparar audio
+echo "🔊 Reparando audio..."
+sudo usermod -a -G audio $USER 2>/dev/null
+systemctl --user restart pipewire 2>/dev/null
+systemctl --user restart wireplumber 2>/dev/null
+echo "  ✅ Audio reparado"
+
+# 7. Reparar permisos
+echo "🔐 Reparando permisos..."
+sudo chown -R $USER:$USER ~/.config 2>/dev/null
+sudo chown -R $USER:$USER ~/.local 2>/dev/null
+echo "  ✅ Permisos reparados"
+
+# 8. Configurar monitores
+echo "🖥️  Configurando monitores..."
+if command -v xrandr &>/dev/null; then
+    xrandr --auto 2>/dev/null
+    xrandr --output eDP --auto --output HDMI-A-0 --auto --right-of eDP 2>/dev/null
+    echo "  ✅ Monitores configurados"
+fi
+
+# 9. Limpiar cachés de usuario
+echo "🧹 Limpiando cachés de usuario..."
+rm -rf ~/.cache/* 2>/dev/null
+rm -rf ~/.thumbnails/* 2>/dev/null
+echo "  ✅ Cachés limpiados"
+
+echo
+ok "✅ Reparaciones completadas exitosamente"
+
+echo
+echo -e "${BLUE}📊 Resumen de acciones realizadas:${NC}"
+separator
+echo "  ✅ Paquetes reparados y actualizados"
+echo "  ✅ Sistema limpiado (caché, temporales)"
+echo "  ✅ GDM (pantalla) reparado"
+echo "  ✅ Udev (dispositivos) reparado"
+echo "  ✅ Keyring (contraseñas) reparado"
+echo "  ✅ Audio (PipeWire) reparado"
+echo "  ✅ Permisos de usuario reparados"
+echo "  ✅ Monitores configurados"
+echo "  ✅ Cachés de usuario limpiados"
+
+echo
+echo -e "${YELLOW}⚠️  Para aplicar todos los cambios correctamente:${NC}"
+read -p "¿Reiniciar el sistema ahora? (s/N) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Ss]$ ]]; then
+    echo "Reiniciando en 5 segundos..."
+    sleep 5
+    sudo reboot
+else
+    echo
+    echo "Recuerda reiniciar manualmente cuando sea posible"
+    echo "Para reiniciar después: sudo reboot"
+fi

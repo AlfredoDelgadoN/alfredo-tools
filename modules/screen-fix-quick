@@ -1,0 +1,56 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "⚡ Solución Rápida - Pantalla Negra"
+
+echo -e "${BLUE}🔧 Aplicando solución rápida...${RESET}"
+separator
+
+# Detectar monitores
+echo "📺 Detectando monitores..."
+MONITORS=$(xrandr --listmonitors 2>/dev/null | tail -n +2 | wc -l)
+echo "  Monitores detectados: $MONITORS"
+
+# Verificar si HDMI está conectado
+if xrandr | grep -q "HDMI-A-0 connected"; then
+    echo "  📺 HDMI detectado"
+    HAS_HDMI=true
+else
+    echo "  ℹ️ No se detectó HDMI"
+    HAS_HDMI=false
+fi
+
+echo
+echo "1️⃣ Desconectando HDMI..."
+xrandr --output HDMI-A-0 --off 2>/dev/null
+sleep 2
+
+echo "2️⃣ Reconectando HDMI..."
+xrandr --output HDMI-A-0 --auto --right-of eDP 2>/dev/null
+sleep 1
+
+echo "3️⃣ Forzando detección de monitores..."
+xrandr --auto 2>/dev/null
+
+echo
+echo "📊 Estado final:"
+xrandr --listmonitors 2>/dev/null
+
+echo
+if [ "$HAS_HDMI" = true ]; then
+    ok "✅ Solución aplicada - HDMI reconectado"
+else
+    warn "⚠️ No se detectó HDMI - Verifica la conexión física"
+    echo "  💡 Si el problema persiste:"
+    echo "     1. Desconecta físicamente el cable HDMI"
+    echo "     2. Espera 5 segundos"
+    echo "     3. Vuelve a conectarlo"
+    echo "     4. Ejecuta: alfredo fix-hdmi"
+fi
+
+echo
+echo "📌 Si el problema persiste:"
+echo "  • alfredo fix-hdmi     - Solución detallada de HDMI"
+echo "  • alfredo diagnostico  - Diagnóstico completo"

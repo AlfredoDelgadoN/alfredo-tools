@@ -1,55 +1,361 @@
 #!/bin/bash
 
-# Determinar la ruta base
-if [ -n "$ALFREDO_BASE" ]; then
-    BASE="$ALFREDO_BASE"
-else
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    BASE="$(cd "$SCRIPT_DIR/.." && pwd)"
-fi
-
-# Cargar UI
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 source "$BASE/lib/ui"
 
 title "Alfredo Tools - Salud del Sistema"
 
-echo -e "${BLUE}📊 CPU${RESET}"
+# ============================================
+# 1. INFORMACIÓN DEL SISTEMA OPERATIVO
+# ============================================
+echo -e "${BLUE}🖥️  SISTEMA OPERATIVO${RESET}"
 separator
-echo "Carga: $(uptime | awk -F'load average:' '{print $2}')"
-echo "Info:"
-lscpu | grep -E 'Model name|CPU\(s\)|MHz' | sed 's/^/  /'
 
-echo
-echo -e "${BLUE}💾 Memoria${RESET}"
-separator
-free -h
+# Distribución
+if [ -f /etc/os-release ]; then
+    OS_NAME=$(grep PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '"')
+    OS_VERSION=$(grep VERSION_ID /etc/os-release | cut -d= -f2 | tr -d '"')
+    echo "  Distribución: $OS_NAME"
+    echo "  Versión: $OS_VERSION"
+fi
 
-echo
-echo -e "${BLUE}💿 Disco${RESET}"
-separator
-df -h | grep -E '^/dev/|Filesystem'
+# Kernel
+echo "  Kernel: $(uname -r)"
+echo "  Arquitectura: $(uname -m)"
 
+# Entorno gráfico
+echo -n "  Entorno gráfico: "
+if [ "$XDG_CURRENT_DESKTOP" ]; then
+    echo "$XDG_CURRENT_DESKTOP"
+elif [ "$DESKTOP_SESSION" ]; then
+    echo "$DESKTOP_SESSION"
+else
+    echo "No detectado"
+fi
+
+# Gestor de pantalla
+echo -n "  Gestor de pantalla: "
+if systemctl is-active --quiet gdm3 2>/dev/null; then
+    echo "GDM3"
+elif systemctl is-active --quiet lightdm 2>/dev/null; then
+    echo "LightDM"
+elif systemctl is-active --quiet sddm 2>/dev/null; then
+    echo "SDDM"
+else
+    echo "No detectado"
+fi
+
+# Servidor gráfico
+echo -n "  Servidor gráfico: "
+if [ "$XDG_SESSION_TYPE" ]; then
+    echo "$XDG_SESSION_TYPE"
+elif echo "$DISPLAY" | grep -q ":"; then
+    echo "X11"
+else
+    echo "No detectado"
+fi
+
+# ============================================
+# 2. INFORMACIÓN DEL PROCESADOR
+# ============================================
 echo
-echo -e "${BLUE}⚙️ Procesos (Top 5 por CPU)${RESET}"
+echo -e "${BLUE}⚡ PROCESADOR${RESET}"
 separator
-ps aux --sort=-%cpu | head -6 | tail -5 | while read line; do
-    cpu=$(echo "$line" | awk '{print $3}')
-    cmd=$(echo "$line" | awk '{print $11}')
-    echo "  $cmd ($cpu% CPU)"
+
+# Marca del procesador
+echo -n "  Marca: "
+if grep -qi "AMD" /proc/cpuinfo 2>/dev/null; then
+    echo -e "${RED}AMD${NC} 🟣"
+elif grep -qi "Intel" /proc/cpuinfo 2>/dev/null; then
+    echo -e "${BLUE}Intel${NC} 🔵"
+elif grep -qi "ARM" /proc/cpuinfo 2>/dev/null; then
+    echo "ARM 🟢"
+else
+    echo "No detectado"
+fi
+
+# Modelo completo
+MODEL=$(grep "model name" /proc/cpuinfo | head -1 | cut -d: -f2 | xargs)
+echo "  Modelo: $MODEL"
+
+# Velocidades
+echo -n "  Velocidad base: "
+if lscpu | grep -q "CPU MHz mín"; then
+    MIN_MHZ=$(lscpu | grep "CPU MHz mín" | awk '{print $4}' | cut -d',' -f1)
+    MAX_MHZ=$(lscpu | grep "CPU MHz máx" | awk '{print $4}' | cut -d',' -f1)
+    echo "$MIN_MHZ - $MAX_MHZ MHz"
+elif lscpu | grep -q "CPU max MHz"; then
+    MAX_MHZ=$(lscpu | grep "CPU max MHz" | awk '{print $4}' | cut -d',' -f1)
+    MIN_MHZ=$(lscpu | grep "CPU min MHz" | awk '{print $4}' | cut -d',' -f1)
+    echo "$MIN_MHZ - $MAX_MHZ MHz"
+else
+    echo "No disponible"
+fi
+
+# Velocidad actual
+CURRENT_MHZ=$(grep "MHz" /proc/cpuinfo | head -1 | awk '{print $4}' | cut -d'.' -f1)
+if [ -n "$CURRENT_MHZ" ] && [ "$CURRENT_MHZ" -gt 0 ]; then
+    echo "  Velocidad actual: $CURRENT_MHZ MHz"
+fi
+
+# Núcleos e hilos
+CORES=$(lscpu | grep "^CPU(s):" | awk '{print $2}')
+THREADS=$(lscpu | grep "Thread(s) per core" | awk '{print $4}')
+if [ -n "$THREADS" ] && [ "$THREADS" -gt 1 ]; then
+    echo "  Núcleos: $CORES (físicos), $((CORES * THREADS)) (lógicos)"
+else
+    echo "  Núcleos: $CORES"
+fi
+
+# Arquitectura
+ARCH=$(lscpu | grep "Architecture" | cut -d: -f2 | xargs)
+if [ -n "$ARCH" ]; then
+    echo "  Arquitectura: $ARCH"
+fi
+
+# Caché
+echo "  Caché:"
+CACHE_INFO=$(lscpu | grep "cache" | head -3)
+if [ -n "$CACHE_INFO" ]; then
+    echo "$CACHE_INFO" | while read line; do
+        echo "    $line"
+    done
+else
+    CACHE_SIZE=$(grep "cache size" /proc/cpuinfo | head -1 | cut -d: -f2 | xargs)
+    if [ -n "$CACHE_SIZE" ]; then
+        echo "    L3 cache: $CACHE_SIZE"
+    fi
+fi
+
+# Tecnologías soportadas
+echo "  Tecnologías:"
+if grep -q "svm" /proc/cpuinfo 2>/dev/null; then
+    echo "    • Virtualización (AMD-V): ✅"
+elif grep -q "vmx" /proc/cpuinfo 2>/dev/null; then
+    echo "    • Virtualización (Intel VT-x): ✅"
+else
+    echo "    • Virtualización: ❌"
+fi
+
+if grep -q "avx2" /proc/cpuinfo 2>/dev/null; then
+    echo "    • AVX2: ✅"
+fi
+
+if grep -q "avx512" /proc/cpuinfo 2>/dev/null; then
+    echo "    • AVX-512: ✅"
+fi
+
+if grep -q "sse4_2" /proc/cpuinfo 2>/dev/null; then
+    echo "    • SSE4.2: ✅"
+fi
+
+# ============================================
+# 3. INFORMACIÓN DE PANTALLAS Y GRÁFICOS
+# ============================================
+echo
+echo -e "${BLUE}🖥️  PANTALLAS Y GRÁFICOS${RESET}"
+separator
+
+# GPU
+echo -n "  GPU: "
+if command -v glxinfo &>/dev/null; then
+    GPU=$(glxinfo 2>/dev/null | grep "OpenGL renderer" | head -1 | cut -d: -f2 | xargs)
+    if [ -n "$GPU" ]; then
+        echo "$GPU"
+    else
+        lspci | grep -E "VGA|3D" | cut -d: -f3 | xargs
+    fi
+else
+    lspci | grep -E "VGA|3D" | cut -d: -f3 | xargs
+fi
+
+# Monitores
+echo "  Monitores detectados:"
+xrandr --listmonitors 2>/dev/null | tail -n +2 | while read line; do
+    echo "    $line"
 done
 
-echo
-echo -e "${BLUE}⚙️ Procesos (Top 5 por Memoria)${RESET}"
-separator
-ps aux --sort=-%mem | head -6 | tail -5 | while read line; do
-    mem=$(echo "$line" | awk '{print $4}')
-    cmd=$(echo "$line" | awk '{print $11}')
-    echo "  $cmd ($mem% MEM)"
+# Resoluciones
+echo "  Resoluciones activas:"
+xrandr 2>/dev/null | grep -E " connected| connected primary" | while read line; do
+    MONITOR=$(echo "$line" | awk '{print $1}')
+    RES=$(echo "$line" | grep -oP '\d+x\d+' | head -1)
+    if [ -n "$RES" ]; then
+        echo "    $MONITOR: $RES"
+    fi
 done
 
+# ============================================
+# 4. DIAGNÓSTICO DE PROBLEMAS DE PANTALLA
+# ============================================
 echo
-echo -e "${BLUE}📈 Uptime${RESET}"
+echo -e "${BLUE}🔍 DIAGNÓSTICO DE PANTALLA${RESET}"
 separator
-uptime -p
 
-ok "Sistema funcionando correctamente"
+# Verificar errores recientes de GDM
+if sudo journalctl --since "5 minutes ago" 2>/dev/null | grep -q "Gdm: on_display"; then
+    echo -e "  ${YELLOW}⚠️  Se detectaron errores de GDM en los últimos 5 minutos${NC}"
+    echo "  💡 Si ves pantalla negra, desconecta y reconecta el HDMI"
+    echo "  💡 O ejecuta: alfredo screen-fix-quick"
+else
+    echo -e "  ${GREEN}✅ Sin errores de GDM recientes${NC}"
+fi
+
+# Verificar estado de los monitores
+MONITOR_COUNT=$(xrandr --listmonitors 2>/dev/null | tail -n +2 | wc -l)
+if [ $MONITOR_COUNT -gt 1 ]; then
+    echo -e "  ${GREEN}✅ $MONITOR_COUNT monitores detectados${NC}"
+else
+    echo -e "  ${YELLOW}⚠️  Solo 1 monitor detectado${NC}"
+    echo "  💡 Si esperas más monitores, revisa las conexiones"
+fi
+
+# ============================================
+# 5. MEMORIA
+# ============================================
+echo
+echo -e "${BLUE}📊 MEMORIA${RESET}"
+separator
+
+free -h | awk '/Mem:/ {
+    total=$2
+    used=$3
+    free=$4
+    avail=$7
+    used_percent = used/total*100
+    printf "  Total: %s\n  Usada: %s (%.0f%%)\n  Libre: %s\n  Disponible: %s\n", total, used, used_percent, free, avail
+}'
+
+# Swap
+free -h | awk '/Swap:/ {
+    if ($2 != "0B") {
+        printf "  Swap total: %s\n  Swap usado: %s\n", $2, $3
+    } else {
+        print "  Swap: No configurado"
+    }
+}'
+
+# ============================================
+# 6. ALMACENAMIENTO - VERSIÓN RESUMIDA
+# ============================================
+echo
+echo -e "${BLUE}💿 ALMACENAMIENTO${RESET}"
+separator
+
+# Uso de disco por montura
+echo "  Uso de discos por partición:"
+df -h | grep -E '^/dev/' | while read line; do
+    SIZE=$(echo "$line" | awk '{print $2}')
+    USED=$(echo "$line" | awk '{print $3}')
+    AVAIL=$(echo "$line" | awk '{print $4}')
+    USE=$(echo "$line" | awk '{print $5}')
+    MOUNT=$(echo "$line" | awk '{print $6}')
+    echo "    $MOUNT: $USE usado ($USED de $SIZE, libre: $AVAIL)"
+done
+
+# Información resumida de discos
+echo
+echo "  Discos detectados:"
+for DISK in $(lsblk -d -o NAME,TYPE | grep disk | awk '{print $1}'); do
+    SIZE=$(lsblk -d -o SIZE "/dev/$DISK" 2>/dev/null | tail -1)
+    
+    # Determinar tipo
+    if [ -f "/sys/block/$DISK/queue/rotational" ]; then
+        ROTA=$(cat "/sys/block/$DISK/queue/rotational" 2>/dev/null)
+        if [ "$ROTA" = "0" ]; then
+            if echo "$DISK" | grep -q "nvme"; then
+                TIPO="NVMe ⚡"
+                # Obtener temperatura para NVMe
+                TEMP=$(sudo smartctl -A "/dev/$DISK" 2>/dev/null | grep -i "Temperature" | head -1 | awk '{print $3}')
+                if [ -z "$TEMP" ]; then
+                    TEMP=$(sudo smartctl -A "/dev/$DISK" 2>/dev/null | grep -i "Temp" | head -1 | awk '{print $10}')
+                fi
+            else
+                TIPO="SSD ⚡"
+                TEMP=""
+            fi
+        elif [ "$ROTA" = "1" ]; then
+            TIPO="HDD 💾"
+            TEMP=""
+        else
+            TIPO="Desconocido"
+            TEMP=""
+        fi
+    else
+        TIPO="Desconocido"
+        TEMP=""
+    fi
+    
+    # Modelo
+    MODEL=$(lsblk -d -o MODEL "/dev/$DISK" 2>/dev/null | tail -1)
+    
+    echo -n "    📀 $DISK: $SIZE - $TIPO"
+    if [ -n "$TEMP" ] && [ "$TEMP" -gt 0 ] 2>/dev/null; then
+        echo -n " (${TEMP}°C)"
+    fi
+    echo
+    if [ -n "$MODEL" ] && [ "$MODEL" != "-" ]; then
+        echo "       Modelo: $MODEL"
+    fi
+done
+
+# Recomendación si hay poco espacio
+if df -h / | awk 'NR==2 {print $5}' | grep -q "[8-9][0-9]%\|100%"; then
+    echo -e "  ${YELLOW}⚠️  Espacio en disco crítico!${NC}"
+    echo "     • Limpia caché: sudo apt clean"
+    echo "     • Elimina paquetes no usados: sudo apt autoremove"
+fi
+
+# ============================================
+# 7. CARGA DEL SISTEMA
+# ============================================
+echo
+echo -e "${BLUE}📈 CARGA DEL SISTEMA${RESET}"
+separator
+
+LOAD=$(uptime | awk -F'load average:' '{print $2}' | xargs)
+echo "  Carga promedio: $LOAD"
+
+# Uptime
+echo "  Tiempo activo: $(uptime -p | sed 's/up //')"
+
+# Procesos
+echo "  Procesos activos: $(ps aux | wc -l)"
+
+# ============================================
+# 8. RECOMENDACIONES
+# ============================================
+echo
+echo -e "${BLUE}💡 RECOMENDACIONES${RESET}"
+separator
+
+# Recomendación para pantalla negra
+if sudo journalctl --since "10 minutes ago" 2>/dev/null | grep -q "Gdm: on_display"; then
+    echo "  🔧 Problema de pantalla negra detectado:"
+    echo "     • Desconecta y reconecta el cable HDMI"
+    echo "     • O ejecuta: alfredo screen-fix-quick"
+    echo "     • Si persiste: alfredo fix-hdmi"
+else
+    echo "  ✅ Sistema estable"
+    echo "  📌 Mantén tu sistema actualizado: sudo apt update && sudo apt upgrade"
+fi
+
+# Recomendación de actualizaciones
+if [ -f /var/run/reboot-required ]; then
+    echo -e "  ${YELLOW}⚠️  Se requiere reiniciar el sistema para aplicar actualizaciones${NC}"
+fi
+
+# Recomendación de temperatura
+if command -v sensors &>/dev/null; then
+    TEMP=$(sensors 2>/dev/null | grep -i "temp1" | head -1 | awk '{print $2}' | sed 's/[^0-9.]//g')
+    if [ -n "$TEMP" ] && [ ${TEMP%.*} -gt 80 ] 2>/dev/null; then
+        echo -e "  ${YELLOW}⚠️  Temperatura CPU alta: ${TEMP}°C${NC}"
+        echo "     • Limpia los ventiladores"
+        echo "     • Verifica la pasta térmica"
+    elif [ -n "$TEMP" ]; then
+        echo "  🌡️  Temperatura CPU: ${TEMP}°C"
+    fi
+fi
+
+echo
+ok "Salud del sistema completada"

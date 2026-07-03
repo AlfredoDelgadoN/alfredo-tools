@@ -1,0 +1,98 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "⚡ Información del Procesador"
+
+echo -e "${BLUE}🔍 Detalles completos del procesador...${RESET}"
+separator
+
+# 1. Información básica
+echo "1️⃣ Información básica:"
+echo "  Fabricante: $(lscpu | grep -E "AMD|Intel|ARM" | head -1 || echo "No detectado")"
+echo "  Modelo: $(lscpu | grep "Model name" | cut -d: -f2 | xargs)"
+echo "  Arquitectura: $(lscpu | grep "Architecture" | cut -d: -f2 | xargs)"
+echo
+
+# 2. Velocidad
+echo "2️⃣ Velocidad:"
+if lscpu | grep -q "CPU max MHz"; then
+    MAX=$(lscpu | grep "CPU max MHz" | awk '{print $4}')
+    MIN=$(lscpu | grep "CPU min MHz" | awk '{print $4}')
+    echo "  Máxima: $MAX MHz"
+    echo "  Mínima: $MIN MHz"
+fi
+
+if [ -f /proc/cpuinfo ]; then
+    CURRENT=$(grep "MHz" /proc/cpuinfo | head -1 | awk '{print $4}')
+    echo "  Actual: $(printf "%.0f" $CURRENT) MHz"
+fi
+echo
+
+# 3. Núcleos e hilos
+echo "3️⃣ Núcleos e hilos:"
+CORES=$(lscpu | grep "^CPU(s):" | awk '{print $2}')
+THREADS_PER_CORE=$(lscpu | grep "Thread(s) per core" | awk '{print $4}')
+SOCKETS=$(lscpu | grep "Socket(s)" | awk '{print $2}')
+echo "  Núcleos físicos: $CORES"
+echo "  Hilos por núcleo: $THREADS_PER_CORE"
+echo "  Total hilos: $((CORES * THREADS_PER_CORE))"
+echo "  Sockets: $SOCKETS"
+echo
+
+# 4. Caché
+echo "4️⃣ Caché:"
+lscpu | grep "cache" | while read line; do
+    echo "  $line"
+done
+echo
+
+# 5. Tecnologías soportadas
+echo "5️⃣ Tecnologías soportadas:"
+if grep -q "vmx" /proc/cpuinfo 2>/dev/null; then
+    echo "  ✅ Virtualización (Intel VT-x)"
+elif grep -q "svm" /proc/cpuinfo 2>/dev/null; then
+    echo "  ✅ Virtualización (AMD-V)"
+else
+    echo "  ❌ Virtualización no soportada"
+fi
+
+if grep -q "avx2" /proc/cpuinfo 2>/dev/null; then
+    echo "  ✅ AVX2"
+fi
+
+if grep -q "avx512" /proc/cpuinfo 2>/dev/null; then
+    echo "  ✅ AVX-512"
+fi
+
+if grep -q "ssse3" /proc/cpuinfo 2>/dev/null; then
+    echo "  ✅ SSSE3"
+fi
+
+if grep -q "sse4_2" /proc/cpuinfo 2>/dev/null; then
+    echo "  ✅ SSE4.2"
+fi
+echo
+
+# 6. Temperatura
+echo "6️⃣ Temperatura:"
+if command -v sensors &>/dev/null; then
+    sensors | grep -E "Core|Temp" | while read line; do
+        echo "  $line"
+    done
+else
+    echo "  ℹ️ lm-sensors no instalado"
+    echo "  Instalar con: sudo apt install lm-sensors"
+fi
+echo
+
+# 7. Rendimiento
+echo "7️⃣ Rendimiento:"
+LOAD=$(uptime | awk -F'load average:' '{print $2}' | xargs)
+echo "  Carga promedio: $LOAD"
+echo "  Procesos: $(ps aux | wc -l)"
+echo "  Uptime: $(uptime -p | sed 's/up //')"
+
+echo
+ok "Información del procesador completada"

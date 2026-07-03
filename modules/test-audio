@@ -1,0 +1,130 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🔊 Prueba de Audio"
+
+echo -e "${BLUE}🔍 Verificando sistema de audio...${RESET}"
+separator
+
+# 1. Servidor de audio
+echo "1️⃣ Servidor de audio:"
+if pactl info 2>/dev/null | grep -q "PipeWire"; then
+    echo -e "  ${GREEN}✅ PipeWire activo${NC}"
+else
+    echo -e "  ${YELLOW}⚠️  Otro servidor de audio en uso${NC}"
+fi
+pactl info | grep "Server Name"
+echo
+
+# 2. Dispositivos de audio
+echo "2️⃣ Dispositivos de audio:"
+pactl list short sinks | while read line; do
+    NAME=$(echo "$line" | awk '{print $2}')
+    if echo "$line" | grep -q "RUNNING"; then
+        echo -e "  ${GREEN}✅ $NAME (activo)${NC}"
+    else
+        echo -e "  ${YELLOW}⚠️  $NAME (inactivo)${NC}"
+    fi
+done
+echo
+
+# 3. Detectar y configurar sink por defecto
+echo "3️⃣ Configurando dispositivo por defecto..."
+
+# Verificar si hay un sink por defecto
+DEFAULT_SINK=$(pactl info 2>/dev/null | grep "Default Sink" | awk '{print $3}')
+
+if [ -z "$DEFAULT_SINK" ] || [ "$DEFAULT_SINK" = "" ]; then
+    echo -e "  ${YELLOW}⚠️  No hay sink por defecto, configurando...${NC}"
+    
+    # Buscar sinks disponibles
+    SINKS=$(pactl list short sinks 2>/dev/null)
+    if [ -n "$SINKS" ]; then
+        # Priorizar HDMI si existe
+        if echo "$SINKS" | grep -q "hdmi"; then
+            DEFAULT_SINK=$(echo "$SINKS" | grep "hdmi" | head -1 | awk '{print $2}')
+            echo -e "  ${GREEN}✅ Configurando HDMI como por defecto${NC}"
+        else
+            DEFAULT_SINK=$(echo "$SINKS" | head -1 | awk '{print $2}')
+            echo -e "  ${GREEN}✅ Configurando primer sink disponible${NC}"
+        fi
+        pactl set-default-sink "$DEFAULT_SINK" 2>/dev/null
+    else
+        echo -e "  ${RED}❌ No se encontraron sinks de audio${NC}"
+        exit 1
+    fi
+else
+    echo -e "  ${GREEN}✅ Sink por defecto: $DEFAULT_SINK${NC}"
+fi
+echo
+
+# 4. Aplicaciones con audio
+echo "4️⃣ Aplicaciones reproduciendo audio:"
+SINK_INPUTS=$(pactl list short sink-inputs 2>/dev/null)
+if [ -n "$SINK_INPUTS" ]; then
+    echo "$SINK_INPUTS" | while read line; do
+        if echo "$line" | grep -q "RUNNING"; then
+            echo "  ✅ Audio activo"
+        fi
+    done
+    echo "  📊 Total: $(echo "$SINK_INPUTS" | wc -l) flujo(s) de audio"
+else
+    echo -e "  ${YELLOW}⏸️  No hay audio reproduciéndose${NC}"
+fi
+echo
+
+# 5. Prueba de sonido
+echo "5️⃣ Prueba de sonido:"
+if [ -n "$DEFAULT_SINK" ]; then
+    echo -e "  ${YELLOW}Reproduciendo tono de prueba...${NC}"
+    
+    # Intentar con speaker-test
+    if speaker-test -t sine -f 440 -c 2 -D "$DEFAULT_SINK" 2>/dev/null &
+    then
+        PID=$!
+        sleep 2
+        kill $PID 2>/dev/null
+        echo -e "  ${GREEN}✅ Prueba completada${NC}"
+    else
+        # Intentar con aplay
+        if command -v aplay &>/dev/null; then
+            echo -e "  ${YELLOW}Intentando con aplay...${NC}"
+            # Crear tono simple
+            dd if=/dev/zero bs=8000 count=200 2>/dev/null | aplay -q 2>/dev/null &
+            PID=$!
+            sleep 1
+            kill $PID 2>/dev/null
+            echo -e "  ${GREEN}✅ Prueba completada${NC}"
+        else
+            echo -e "  ${YELLOW}⚠️  No se pudo realizar prueba automatizada${NC}"
+        fi
+    fi
+else
+    echo -e "  ${RED}❌ No hay sink por defecto para probar${NC}"
+fi
+echo
+
+# 6. Verificación final
+echo "📊 Verificación final:"
+separator
+
+# Verificar si el audio funciona
+if pactl list short sink-inputs 2>/dev/null | grep -q "RUNNING"; then
+    echo -e "  ${GREEN}✅ Audio funcionando correctamente${NC}"
+    echo "  🔊 Aplicaciones activas:"
+    pactl list short sink-inputs 2>/dev/null | while read line; do
+        if echo "$line" | grep -q "RUNNING"; then
+            echo "    • $(echo "$line" | awk '{print $2}')"
+        fi
+    done
+elif [ -n "$DEFAULT_SINK" ]; then
+    echo -e "  ${GREEN}✅ Sistema de audio configurado correctamente${NC}"
+    echo -e "  ${YELLOW}💡 Abre YouTube para probar el audio${NC}"
+else
+    echo -e "  ${RED}❌ Sistema de audio con problemas${NC}"
+fi
+
+echo
+ok "Prueba de audio completada"

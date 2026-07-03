@@ -1,0 +1,45 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "📋 Información Rápida del Sistema"
+
+echo -e "${BLUE}⚡ RESUMEN EJECUTIVO${RESET}"
+separator
+
+# Sistema
+echo "  SO: $(lsb_release -ds 2>/dev/null || cat /etc/os-release | grep PRETTY_NAME | cut -d= -f2 | tr -d '"')"
+echo "  Kernel: $(uname -r)"
+echo "  Entorno: ${XDG_CURRENT_DESKTOP:-$DESKTOP_SESSION}"
+
+# Procesador
+MODEL=$(grep "model name" /proc/cpuinfo | head -1 | cut -d: -f2 | xargs)
+echo "  CPU: $MODEL"
+echo "  Núcleos: $(nproc)"
+
+# Memoria
+MEM_TOTAL=$(free -h | awk '/Mem:/ {print $2}')
+MEM_USED=$(free -h | awk '/Mem:/ {print $3}')
+echo "  RAM: $MEM_USED / $MEM_TOTAL"
+
+# Disco
+DISK_USE=$(df -h / | awk 'NR==2 {print $5}')
+DISK_AVAIL=$(df -h / | awk 'NR==2 {print $4}')
+echo "  Disco: $DISK_USE usado (libre: $DISK_AVAIL)"
+
+# Monitores
+MON_COUNT=$(xrandr --listmonitors 2>/dev/null | tail -n +2 | wc -l)
+echo "  Monitores: $MON_COUNT"
+
+# GPU
+GPU=$(glxinfo 2>/dev/null | grep "OpenGL renderer" | head -1 | cut -d: -f2 | xargs)
+echo "  GPU: ${GPU:-No detectada}"
+
+echo
+echo -e "${BLUE}📌 Comandos útiles:${RESET}"
+separator
+echo "  • Detalles completos: alfredo salud"
+echo "  • Estado actual: alfredo estado-actual"
+echo "  • Diagnóstico: alfredo diagnostico"
+echo "  • Procesador: alfredo procesador"

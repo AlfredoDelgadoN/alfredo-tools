@@ -1,0 +1,195 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🔍 Análisis de Logs del Sistema"
+
+# ============================================
+# CONFIGURACIÓN DE TIEMPO
+# ============================================
+
+# Definir período de análisis (últimos 30 minutos por defecto)
+MINUTOS=${1:-30}
+SEGUNDOS=$((MINUTOS * 60))
+FECHA_LIMITE=$(date -d "@$(($(date +%s) - SEGUNDOS))" "+%b %d %H:%M:%S")
+
+echo -e "${BLUE}📋 Analizando logs de los últimos ${MINUTOS} minutos${RESET}"
+echo -e "${BLUE}   (desde: $FECHA_LIMITE)${RESET}"
+echo -e "${BLUE}   (para ver más tiempo: alfredo analizar-logs 60)${RESET}"
+separator
+
+# Variables para almacenar errores actuales
+ERRORES_ACTUALES=()
+ERRORES_PASADOS=()
+
+# ============================================
+# FUNCIÓN PARA VERIFICAR ERROR RECIENTE
+# ============================================
+
+verificar_error_reciente() {
+    local patron="$1"
+    local mensaje="$2"
+    local solucion="$3"
+    local tiempo_limite=$(date -d "@$(($(date +%s) - SEGUNDOS))" "+%s")
+    
+    # Buscar errores con timestamp
+    local errores=$(sudo journalctl -xe 2>/dev/null | grep -i "$patron" | tail -5)
+    
+    if [ -n "$errores" ]; then
+        # Verificar si hay errores recientes
+        local reciente=false
+        local ultimo_error=""
+        
+        while IFS= read -r linea; do
+            # Extraer timestamp del log
+            local timestamp=$(echo "$linea" | awk '{print $1" "$2" "$3}')
+            local fecha_log=$(date -d "$timestamp" "+%s" 2>/dev/null || echo "0")
+            
+            if [ "$fecha_log" -gt "$tiempo_limite" ] 2>/dev/null; then
+                reciente=true
+                ultimo_error="$linea"
+                break
+            fi
+        done <<< "$errores"
+        
+        if [ "$reciente" = true ]; then
+            echo -e "${RED}❌ ERROR ACTUAL:${NC} $mensaje"
+            echo -e "${YELLOW}   📅 Último error:${NC}"
+            echo "$ultimo_error" | sed 's/^/     /'
+            echo -e "${GREEN}   💡 Solución:${NC}"
+            echo "$solucion" | sed 's/^/     /'
+            echo
+            ERRORES_ACTUALES+=("$mensaje")
+        else
+            echo -e "${GREEN}✅ No hay errores recientes${NC} (el último fue hace más de $MINUTOS minutos)"
+            echo -e "${YELLOW}   Errores antiguos encontrados (ya reparados):${NC}"
+            echo "$errores" | tail -2 | sed 's/^/     📅 /'
+            echo
+            ERRORES_PASADOS+=("$mensaje")
+        fi
+    else
+        echo -e "${GREEN}✅ Sin errores: $mensaje${NC}"
+        echo
+    fi
+}
+
+# ============================================
+# 1. ERRORES DE UDEV (sane)
+# ============================================
+echo -e "${BLUE}📌 1. ERRORES DE UDEV (sane)${NC}"
+separator
+
+verificar_error_reciente \
+    "libsane_rules_end" \
+    "Problemas con reglas de sane (escaner)" \
+    "1. Eliminar: sudo rm /etc/udev/rules.d/40-libsane.rules\n    2. Recargar: sudo udevadm control --reload-rules"
+
+# ============================================
+# 2. ERRORES DE GDM (pantalla)
+# ============================================
+echo -e "${BLUE}📌 2. ERRORES DE GDM (pantalla)${NC}"
+separator
+
+verificar_error_reciente \
+    "Gdm: on_display_added" \
+    "Errores de GDM (gestor de pantalla)" \
+    "1. Reiniciar GDM: sudo systemctl restart gdm3\n    2. Reconfigurar: sudo dpkg-reconfigure gdm3"
+
+# ============================================
+# 3. ERRORES DE GNOME KEYRING
+# ============================================
+echo -e "${BLUE}📌 3. ERRORES DE GNOME KEYRING${NC}"
+separator
+
+verificar_error_reciente \
+    "gkr-pam: unable to locate" \
+    "Problemas con el llavero de claves" \
+    "1. Reinstalar: sudo apt install --reinstall gnome-keyring\n    2. Habilitar: systemctl --user enable gnome-keyring-daemon"
+
+# ============================================
+# 4. ERRORES DE PIPEWIRE (audio)
+# ============================================
+echo -e "${BLUE}📌 4. ERRORES DE PIPEWIRE (audio)${NC}"
+separator
+
+verificar_error_reciente \
+    "pipewire.*Permiso denegado" \
+    "Problemas de permisos en PipeWire" \
+    "1. Agregar al grupo audio: sudo usermod -a -G audio $USER\n    2. Reiniciar: systemctl --user restart pipewire"
+
+# ============================================
+# 5. ERRORES DE GLIB
+# ============================================
+echo -e "${BLUE}📌 5. ERRORES DE GLIB${NC}"
+separator
+
+verificar_error_reciente \
+    "GLib: Source ID" \
+    "Errores de GLib (fuente de eventos)" \
+    "1. Reinstalar: sudo apt install --reinstall libglib2.0-0\n    2. Reiniciar sesión gráfica"
+
+# ============================================
+# 6. ERRORES DE SISTEMA DE ARCHIVOS
+# ============================================
+echo -e "${BLUE}📌 6. ERRORES DE SISTEMA DE ARCHIVOS${NC}"
+separator
+
+verificar_error_reciente \
+    "EXT4-fs error\|I/O error" \
+    "Errores en sistema de archivos" \
+    "1. Verificar disco: sudo fsck -Af -M\n    2. Revisar SMART: sudo smartctl -a /dev/sda"
+
+# ============================================
+# 7. ERRORES DE MEMORIA
+# ============================================
+echo -e "${BLUE}📌 7. ERRORES DE MEMORIA${NC}"
+separator
+
+verificar_error_reciente \
+    "out of memory\|OOM" \
+    "Problemas de memoria" \
+    "1. Verificar uso: free -h\n    2. Aumentar swap: sudo dd if=/dev/zero of=/swapfile bs=1G count=4"
+
+# ============================================
+# RESUMEN FINAL
+# ============================================
+echo
+echo -e "${BLUE}📊 RESUMEN DEL ANÁLISIS (últimos $MINUTOS minutos)${NC}"
+separator
+
+TOTAL_ERRORES=${#ERRORES_ACTUALES[@]}
+if [ $TOTAL_ERRORES -eq 0 ]; then
+    echo -e "${GREEN}✅ ¡Excelente! No se encontraron errores recientes.${NC}"
+    if [ ${#ERRORES_PASADOS[@]} -gt 0 ]; then
+        echo -e "${YELLOW}   ⚠️ Se encontraron ${#ERRORES_PASADOS[@]} error(es) antiguos que ya fueron reparados.${NC}"
+        echo -e "${YELLOW}   📅 Ocurrieron hace más de $MINUTOS minutos.${NC}"
+        echo
+        echo -e "${GREEN}💡 Los errores antiguos no afectan el funcionamiento actual.${NC}"
+        echo -e "${GREEN}   Solo preocúpate si ves errores nuevos después de este análisis.${NC}"
+    fi
+else
+    echo -e "${RED}❌ Se encontraron $TOTAL_ERRORES error(es) recientes:${NC}"
+    for error in "${ERRORES_ACTUALES[@]}"; do
+        echo "   • $error"
+    done
+    echo
+    echo -e "${YELLOW}💡 Recomendación:${NC}"
+    echo "   Ejecuta: alfredo reparar-todo"
+    echo "   Luego espera 5 minutos y vuelve a analizar"
+fi
+
+if [ ${#ERRORES_PASADOS[@]} -gt 0 ]; then
+    echo
+    echo -e "${YELLOW}📋 Errores antiguos (ya reparados):${NC}"
+    for error in "${ERRORES_PASADOS[@]}"; do
+        echo "   • $error"
+    done
+    echo -e "${GREEN}   ✅ Estos errores ya fueron solucionados${NC}"
+fi
+
+echo
+echo -e "${BLUE}💡 Para ver más tiempo:${NC}"
+echo "   alfredo analizar-logs 60   # Ver últimos 60 minutos"
+echo "   alfredo analizar-logs 120  # Ver últimos 120 minutos"
+echo "   alfredo analizar-logs 0    # Ver todos los logs (sin límite)"

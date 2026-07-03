@@ -1,0 +1,270 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "💿 Información de Discos"
+
+echo -e "${BLUE}🔍 Detectando discos del sistema...${RESET}"
+separator
+
+# ============================================
+# 1. LISTAR DISCOS DETECTADOS
+# ============================================
+echo "1️⃣ Discos detectados:"
+echo
+
+# Discos SATA/NVMe
+lsblk -d -o NAME,SIZE,TYPE,MODEL,ROTA 2>/dev/null | grep -v "loop" | while read line; do
+    if echo "$line" | grep -q "disk"; then
+        NAME=$(echo "$line" | awk '{print $1}')
+        SIZE=$(echo "$line" | awk '{print $2}')
+        TYPE=$(echo "$line" | awk '{print $3}')
+        MODEL=$(echo "$line" | cut -d' ' -f5-)
+        ROTA=$(echo "$line" | awk '{print $4}')
+        
+        # Determinar tipo
+        if [ "$ROTA" = "1" ]; then
+            TIPO="HDD 💾"
+        elif [ "$ROTA" = "0" ]; then
+            if echo "$NAME" | grep -q "nvme"; then
+                TIPO="NVMe ⚡"
+            else
+                TIPO="SSD ⚡"
+            fi
+        else
+            TIPO="Desconocido"
+        fi
+        
+        echo "  📀 $NAME: $SIZE - $TIPO"
+        if [ -n "$MODEL" ] && [ "$MODEL" != "-" ]; then
+            echo "     Modelo: $MODEL"
+        fi
+    fi
+done
+
+echo
+echo "2️⃣ Detalles por disco:"
+separator
+
+# ============================================
+# 2. FUNCIÓN PARA OBTENER INFO DE NVMe
+# ============================================
+get_nvme_info() {
+    local DEVICE="$1"
+    
+    if ! command -v smartctl &>/dev/null; then
+        return 1
+    fi
+    
+    # Obtener información completa
+    local INFO=$(sudo smartctl -a "$DEVICE" 2>/dev/null)
+    
+    if [ -z "$INFO" ]; then
+        return 1
+    fi
+    
+    # Modelo
+    local MODEL=$(echo "$INFO" | grep "Model Number:" | cut -d: -f2 | xargs)
+    if [ -n "$MODEL" ]; then
+        echo "  Modelo: $MODEL"
+    fi
+    
+    # Serial
+    local SERIAL=$(echo "$INFO" | grep "Serial Number:" | cut -d: -f2 | xargs)
+    if [ -n "$SERIAL" ]; then
+        echo "  Serial: $SERIAL"
+    fi
+    
+    # Firmware
+    local FW=$(echo "$INFO" | grep "Firmware Version:" | cut -d: -f2 | xargs)
+    if [ -n "$FW" ]; then
+        echo "  Firmware: $FW"
+    fi
+    
+    # NVMe Version
+    local NVME_VER=$(echo "$INFO" | grep "NVMe Version:" | cut -d: -f2 | xargs)
+    if [ -n "$NVME_VER" ]; then
+        echo "  NVMe Version: $NVME_VER"
+    fi
+    
+    # Capacidad total
+    local CAPACITY=$(echo "$INFO" | grep "Total NVM Capacity:" | cut -d: -f2 | xargs)
+    if [ -n "$CAPACITY" ]; then
+        echo "  Capacidad: $CAPACITY"
+    fi
+    
+    # Temperatura
+    local TEMP=$(echo "$INFO" | grep "Temperature:" | head -1 | cut -d: -f2 | xargs | sed 's/ Celsius//')
+    if [ -n "$TEMP" ] && [ "$TEMP" -gt 0 ] 2>/dev/null; then
+        echo -n "  Temperatura: ${TEMP}°C"
+        if [ "$TEMP" -gt 70 ]; then
+            echo -e "  ${RED}🔥 CRÍTICA!${NC}"
+        elif [ "$TEMP" -gt 60 ]; then
+            echo -e "  ${YELLOW}⚠️  Elevada${NC}"
+        elif [ "$TEMP" -gt 50 ]; then
+            echo -e "  ${YELLOW}⚠️  Alta${NC}"
+        else
+            echo -e "  ${GREEN}✅ Normal${NC}"
+        fi
+    fi
+    
+    # Umbrales de temperatura
+    local WARN_TEMP=$(echo "$INFO" | grep "Warning  Comp. Temp. Threshold:" | cut -d: -f2 | xargs)
+    local CRIT_TEMP=$(echo "$INFO" | grep "Critical Comp. Temp. Threshold:" | cut -d: -f2 | xargs)
+    if [ -n "$WARN_TEMP" ]; then
+        echo "  Umbral advertencia: $WARN_TEMP"
+        echo "  Umbral crítico: $CRIT_TEMP"
+    fi
+    
+    # Salud SMART
+    local SMART=$(echo "$INFO" | grep "SMART overall-health self-assessment test result:" | cut -d: -f2 | xargs)
+    if [ -n "$SMART" ]; then
+        if echo "$SMART" | grep -qi "PASSED"; then
+            echo -e "  Salud SMART: ${GREEN}✅ PASSED${NC}"
+        else
+            echo -e "  Salud SMART: ${RED}❌ $SMART${NC}"
+        fi
+    fi
+    
+    # Uso del disco
+    local PERCENT=$(echo "$INFO" | grep "Percentage Used:" | cut -d: -f2 | xargs | sed 's/%//')
+    if [ -n "$PERCENT" ]; then
+        echo "  Uso estimado: ${PERCENT}%"
+        if [ "$PERCENT" -gt 80 ]; then
+            echo -e "    ${RED}⚠️  Desgaste alto!${NC}"
+        elif [ "$PERCENT" -gt 50 ]; then
+            echo -e "    ${YELLOW}⚠️  Desgaste moderado${NC}"
+        else
+            echo -e "    ${GREEN}✅ Desgaste bajo${NC}"
+        fi
+    fi
+    
+    # Datos leídos/escritos
+    local READ=$(echo "$INFO" | grep "Data Units Read:" | cut -d: -f2 | xargs)
+    local WRITTEN=$(echo "$INFO" | grep "Data Units Written:" | cut -d: -f2 | xargs)
+    if [ -n "$READ" ]; then
+        echo "  Datos leídos: $READ"
+        echo "  Datos escritos: $WRITTEN"
+    fi
+    
+    # Horas encendido
+    local HOURS=$(echo "$INFO" | grep "Power On Hours:" | cut -d: -f2 | xargs)
+    if [ -n "$HOURS" ]; then
+        local DAYS=$((HOURS / 24))
+        echo "  Horas encendido: $HOURS horas (~${DAYS} días)"
+    fi
+    
+    # Apagados inseguros
+    local UNSAFE=$(echo "$INFO" | grep "Unsafe Shutdowns:" | cut -d: -f2 | xargs)
+    if [ -n "$UNSAFE" ] && [ "$UNSAFE" -gt 0 ]; then
+        echo -e "  Apagados inseguros: ${YELLOW}$UNSAFE${NC}"
+        if [ "$UNSAFE" -gt 10 ]; then
+            echo -e "    ${RED}⚠️  Muchos apagados inseguros!${NC}"
+        fi
+    fi
+    
+    # Errores
+    local ERRORS=$(echo "$INFO" | grep "Media and Data Integrity Errors:" | cut -d: -f2 | xargs)
+    if [ -n "$ERRORS" ]; then
+        if [ "$ERRORS" -eq 0 ]; then
+            echo -e "  Errores de integridad: ${GREEN}0${NC}"
+        else
+            echo -e "  Errores de integridad: ${RED}$ERRORS${NC}"
+        fi
+    fi
+}
+
+# ============================================
+# 3. OBTENER INFO DE CADA DISCO
+# ============================================
+for DISK in $(lsblk -d -o NAME,TYPE | grep disk | awk '{print $1}'); do
+    DEVICE="/dev/$DISK"
+    
+    echo
+    echo -e "${BOLD}${CYAN}📀 Disco: $DISK${RESET}"
+    separator
+    
+    # Tipo de disco
+    if [ -f "/sys/block/$DISK/queue/rotational" ]; then
+        ROTA=$(cat "/sys/block/$DISK/queue/rotational" 2>/dev/null)
+        if [ "$ROTA" = "0" ]; then
+            if echo "$DISK" | grep -q "nvme"; then
+                echo "  Tipo: NVMe ⚡ (Unidad de Estado Sólido PCIe)"
+                # Información detallada para NVMe
+                get_nvme_info "$DEVICE"
+            else
+                echo "  Tipo: SSD ⚡ (Unidad de Estado Sólido)"
+                # Información básica para SSD SATA
+                SIZE=$(lsblk -d -o SIZE "$DEVICE" 2>/dev/null | tail -1)
+                echo "  Tamaño: $SIZE"
+                MODEL=$(lsblk -d -o MODEL "$DEVICE" 2>/dev/null | tail -1)
+                if [ -n "$MODEL" ] && [ "$MODEL" != "-" ]; then
+                    echo "  Modelo: $MODEL"
+                fi
+            fi
+        elif [ "$ROTA" = "1" ]; then
+            echo "  Tipo: HDD 💾 (Disco Mecánico)"
+            # Información básica para HDD
+            SIZE=$(lsblk -d -o SIZE "$DEVICE" 2>/dev/null | tail -1)
+            echo "  Tamaño: $SIZE"
+            MODEL=$(lsblk -d -o MODEL "$DEVICE" 2>/dev/null | tail -1)
+            if [ -n "$MODEL" ] && [ "$MODEL" != "-" ]; then
+                echo "  Modelo: $MODEL"
+            fi
+            # Velocidad de rotación
+            if command -v hdparm &>/dev/null; then
+                RPM=$(sudo hdparm -I "$DEVICE" 2>/dev/null | grep "Rotation Rate" | awk '{print $3}')
+                if [ -n "$RPM" ]; then
+                    echo "  Velocidad: $RPM RPM"
+                fi
+            fi
+        fi
+    fi
+    
+    # Particiones
+    echo "  Particiones:"
+    lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINT "$DEVICE" 2>/dev/null | grep -v "NAME" | while read line; do
+        echo "    $line"
+    done
+done
+
+# ============================================
+# 4. RESUMEN
+# ============================================
+echo
+echo -e "${BLUE}📊 RESUMEN DE DISCOS${RESET}"
+separator
+
+# Contar discos
+HDD_COUNT=0
+SSD_COUNT=0
+NVME_COUNT=0
+
+for DISK in $(lsblk -d -o NAME,TYPE | grep disk | awk '{print $1}'); do
+    if [ -f "/sys/block/$DISK/queue/rotational" ]; then
+        ROTA=$(cat "/sys/block/$DISK/queue/rotational" 2>/dev/null)
+        if [ "$ROTA" = "0" ]; then
+            if echo "$DISK" | grep -q "nvme"; then
+                NVME_COUNT=$((NVME_COUNT + 1))
+            else
+                SSD_COUNT=$((SSD_COUNT + 1))
+            fi
+        elif [ "$ROTA" = "1" ]; then
+            HDD_COUNT=$((HDD_COUNT + 1))
+        fi
+    fi
+done
+
+echo "  📊 Discos encontrados:"
+[ $SSD_COUNT -gt 0 ] && echo "    ⚡ SSD: $SSD_COUNT"
+[ $NVME_COUNT -gt 0 ] && echo "    ⚡ NVMe: $NVME_COUNT"
+[ $HDD_COUNT -gt 0 ] && echo "    💾 HDD: $HDD_COUNT"
+
+echo
+echo -e "${BLUE}💡 Comandos útiles:${RESET}"
+echo "  • Ver SMART completo: sudo smartctl -a /dev/nvme0n1"
+echo "  • Monitorear temperatura: alfredo temp-discos"
+echo "  • Prueba de rendimiento: sudo hdparm -Tt /dev/sdX"
+
+ok "Información de discos completada"

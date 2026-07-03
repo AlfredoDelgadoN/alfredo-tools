@@ -1,0 +1,90 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🔊 Solución de Audio (PipeWire)"
+
+echo -e "${BLUE}🔧 Diagnosticando PipeWire...${RESET}"
+separator
+
+# 1. Verificar estado actual
+echo "1️⃣ Estado actual de PipeWire:"
+if systemctl --user is-active --quiet pipewire 2>/dev/null; then
+    echo -e "  ${GREEN}✅ PipeWire activo${NC}"
+else
+    echo -e "  ${RED}❌ PipeWire inactivo${NC}"
+fi
+
+if systemctl --user is-active --quiet pipewire-pulse 2>/dev/null; then
+    echo -e "  ${GREEN}✅ pipewire-pulse activo${NC}"
+else
+    echo -e "  ${RED}❌ pipewire-pulse inactivo${NC}"
+fi
+
+echo
+echo "2️⃣ Verificando permisos de audio:"
+if groups | grep -q audio; then
+    echo -e "  ${GREEN}✅ Usuario en grupo 'audio'${NC}"
+else
+    echo -e "  ${YELLOW}⚠️ Usuario NO está en grupo 'audio'${NC}"
+    echo "     Agregando..."
+    sudo usermod -a -G audio $USER
+    echo -e "  ${GREEN}✅ Usuario agregado al grupo audio${NC}"
+fi
+
+echo
+echo "3️⃣ Verificando dispositivos de audio:"
+pactl list short cards 2>/dev/null | while read line; do
+    if echo "$line" | grep -q "HDMI"; then
+        echo -e "  🖥️  HDMI: $(echo "$line" | awk '{print $2}')"
+    else
+        echo -e "  🔊 $(echo "$line" | awk '{print $2}')"
+    fi
+done
+
+echo
+echo "4️⃣ Aplicando soluciones..."
+separator
+
+# Iniciar PipeWire
+echo "🔄 Iniciando PipeWire..."
+systemctl --user start pipewire 2>/dev/null
+systemctl --user start pipewire-pulse 2>/dev/null
+echo "  ✅ PipeWire iniciado"
+
+# Habilitar inicio automático
+echo "🔗 Habilitando inicio automático..."
+systemctl --user enable pipewire 2>/dev/null
+systemctl --user enable pipewire-pulse 2>/dev/null
+echo "  ✅ Auto-inicio habilitado"
+
+# Recargar configuración
+echo "🔄 Recargando configuración..."
+pactl info 2>/dev/null | grep "Server Name" | head -1
+echo "  ✅ Configuración recargada"
+
+echo
+echo "5️⃣ Verificando resultado..."
+separator
+
+if systemctl --user is-active --quiet pipewire 2>/dev/null; then
+    echo -e "  ${GREEN}✅ PipeWire activo correctamente${NC}"
+else
+    echo -e "  ${YELLOW}⚠️ PipeWire aún inactivo. Reinicia el sistema.${NC}"
+fi
+
+if systemctl --user is-active --quiet pipewire-pulse 2>/dev/null; then
+    echo -e "  ${GREEN}✅ pipewire-pulse activo correctamente${NC}"
+else
+    echo -e "  ${YELLOW}⚠️ pipewire-pulse aún inactivo. Reinicia el sistema.${NC}"
+fi
+
+echo
+ok "Soluciones de audio aplicadas"
+
+echo
+echo -e "${BLUE}📌 Para verificar el audio:${NC}"
+echo "  • Prueba de sonido: speaker-test -t wav -c 2"
+echo "  • Verificar dispositivos: pactl list short sinks"
+echo "  • Estado: systemctl --user status pipewire"

@@ -1,0 +1,101 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🔊 Configuración de Audio"
+
+echo -e "${BLUE}🔧 Configurando audio para tu sistema...${RESET}"
+separator
+
+# 1. Detectar sinks disponibles
+echo "1️⃣ Dispositivos de audio detectados:"
+SINKS=()
+i=1
+pactl list short sinks 2>/dev/null | while read line; do
+    NAME=$(echo "$line" | awk '{print $2}')
+    DESC=$(echo "$NAME" | sed 's/alsa_output\.//' | cut -d'.' -f1)
+    if echo "$NAME" | grep -q "hdmi"; then
+        echo "  $i) HDMI ($DESC)"
+    elif echo "$NAME" | grep -q "analog"; then
+        echo "  $i) Analógico ($DESC)"
+    else
+        echo "  $i) $DESC"
+    fi
+    SINKS+=("$NAME")
+    i=$((i+1))
+done
+echo
+
+# 2. Seleccionar dispositivo preferido
+echo "2️⃣ Selecciona tu dispositivo preferido:"
+echo "  1) HDMI (para monitor/TV)"
+echo "  2) Analógico (para auriculares/altavoces)"
+echo "  3) Auto-detect (recomendado)"
+echo
+read -p "Opción (1-3): " OPCION
+
+case $OPCION in
+    1)
+        SINK=$(pactl list short sinks 2>/dev/null | grep hdmi | head -1 | awk '{print $2}')
+        if [ -n "$SINK" ]; then
+            pactl set-default-sink "$SINK"
+            echo -e "  ${GREEN}✅ HDMI configurado como predeterminado${NC}"
+        else
+            echo -e "  ${RED}❌ No se detectó dispositivo HDMI${NC}"
+            exit 1
+        fi
+        ;;
+    2)
+        SINK=$(pactl list short sinks 2>/dev/null | grep analog | head -1 | awk '{print $2}')
+        if [ -n "$SINK" ]; then
+            pactl set-default-sink "$SINK"
+            echo -e "  ${GREEN}✅ Analógico configurado como predeterminado${NC}"
+        else
+            echo -e "  ${RED}❌ No se detectó dispositivo analógico${NC}"
+            exit 1
+        fi
+        ;;
+    3)
+        # Auto-detect
+        if pactl list short sinks 2>/dev/null | grep -q hdmi; then
+            SINK=$(pactl list short sinks 2>/dev/null | grep hdmi | head -1 | awk '{print $2}')
+            echo -e "  ${GREEN}✅ HDMI detectado y configurado${NC}"
+        else
+            SINK=$(pactl list short sinks 2>/dev/null | head -1 | awk '{print $2}')
+            echo -e "  ${GREEN}✅ Dispositivo por defecto configurado${NC}"
+        fi
+        pactl set-default-sink "$SINK"
+        ;;
+esac
+
+# 3. Verificar configuración
+echo
+echo "3️⃣ Configuración actual:"
+DEFAULT=$(pactl info 2>/dev/null | grep "Default Sink" | awk '{print $3}')
+if [ -n "$DEFAULT" ]; then
+    echo -e "  ${GREEN}✅ Sink por defecto: $DEFAULT${NC}"
+else
+    echo -e "  ${RED}❌ No se pudo verificar sink por defecto${NC}"
+fi
+
+# 4. Guardar configuración para futuras sesiones
+echo
+echo "4️⃣ Guardando configuración..."
+mkdir -p ~/.config/pipewire/pipewire.conf.d/
+cat > ~/.config/pipewire/pipewire.conf.d/99-default-sink.conf << EOF
+# Configuración de sink por defecto
+context.modules = [
+    {   name = libpipewire-module-metadata
+        args = {   metadata = "default"
+            default.sink = "$SINK"
+        }
+    }
+]
+EOF
+echo -e "  ${GREEN}✅ Configuración guardada en ~/.config/pipewire/pipewire.conf.d/99-default-sink.conf${NC}"
+
+echo
+ok "Configuración de audio completada"
+echo
+echo "📌 Verifica con: alfredo check-audio"

@@ -1,0 +1,119 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🌡️ Temperatura de Discos"
+
+echo -e "${BLUE}🔍 Monitoreando temperatura de discos...${RESET}"
+separator
+
+# Función para obtener temperatura (usando el método que funciona)
+get_temp() {
+    local DEVICE="$1"
+    
+    if command -v smartctl &>/dev/null; then
+        # Para NVMe
+        if echo "$DEVICE" | grep -q "nvme"; then
+            sudo smartctl -A "$DEVICE" 2>/dev/null | grep -E "^Temperature:" | awk '{print $2}' | sed 's/°C//'
+        else
+            # Para SATA/HDD
+            sudo smartctl -A "$DEVICE" 2>/dev/null | grep -E "Temperature_Celsius" | awk '{print $10}'
+        fi
+    fi
+}
+
+# Monitoreo en tiempo real
+echo "🔄 Monitoreando temperatura (actualiza cada 3 segundos)"
+echo "   Presiona Ctrl+C para salir"
+echo
+
+# Detectar discos (excluir zram, loop)
+DISKS=()
+for DISK in $(lsblk -d -o NAME,TYPE | grep disk | awk '{print $1}'); do
+    if [[ ! "$DISK" =~ ^(zram|loop) ]]; then
+        DISKS+=("$DISK")
+    fi
+done
+
+if [ ${#DISKS[@]} -eq 0 ]; then
+    echo "❌ No se encontraron discos físicos"
+    exit 1
+fi
+
+while true; do
+    clear
+    title "🌡️ Temperatura de Discos"
+    echo -e "${BLUE}🕒 $(date '+%Y-%m-%d %H:%M:%S')${RESET}"
+    echo -e "${BLUE}📊 ${#DISKS[@]} disco(s) detectado(s)${RESET}"
+    separator
+    
+    for DISK in "${DISKS[@]}"; do
+        DEVICE="/dev/$DISK"
+        
+        # Determinar tipo
+        if echo "$DISK" | grep -q "nvme"; then
+            TIPO="NVMe"
+        elif [ -f "/sys/block/$DISK/queue/rotational" ]; then
+            ROTA=$(cat "/sys/block/$DISK/queue/rotational" 2>/dev/null)
+            if [ "$ROTA" = "0" ]; then
+                TIPO="SSD"
+            else
+                TIPO="HDD"
+            fi
+        else
+            TIPO="?"
+        fi
+        
+        # Obtener temperatura
+        TEMP=$(get_temp "$DEVICE")
+        
+        if [ -n "$TEMP" ] && [ "$TEMP" -gt 0 ] 2>/dev/null; then
+            # Color según temperatura
+            if [ "$TEMP" -gt 70 ]; then
+                COLOR="${RED}"
+                ICON="🔥 CRÍTICA!"
+            elif [ "$TEMP" -gt 60 ]; then
+                COLOR="${YELLOW}"
+                ICON="⚠️  Elevada"
+            elif [ "$TEMP" -gt 50 ]; then
+                COLOR="${YELLOW}"
+                ICON="⚠️  Alta"
+            else
+                COLOR="${GREEN}"
+                ICON="✅ Normal"
+            fi
+            
+            # Barra de temperatura
+            BAR_LENGTH=30
+            BAR_FILLED=$((TEMP * BAR_LENGTH / 80))
+            [ $BAR_FILLED -gt $BAR_LENGTH ] && BAR_FILLED=$BAR_LENGTH
+            
+            BAR=""
+            for ((i=0; i<BAR_LENGTH; i++)); do
+                if [ $i -lt $BAR_FILLED ]; then
+                    if [ $TEMP -gt 70 ]; then
+                        BAR="${BAR}█"
+                    elif [ $TEMP -gt 60 ]; then
+                        BAR="${BAR}▓"
+                    elif [ $TEMP -gt 50 ]; then
+                        BAR="${BAR}▒"
+                    else
+                        BAR="${BAR}░"
+                    fi
+                else
+                    BAR="${BAR}░"
+                fi
+            done
+            
+            echo -e "  📀 $DISK [$TIPO]: ${COLOR}$TEMP°C${NC} $ICON"
+            echo -e "     ${COLOR}[$BAR]${NC}"
+        else
+            echo -e "  📀 $DISK [$TIPO]: ${YELLOW}Temperatura no disponible${NC}"
+        fi
+    done
+    
+    echo
+    echo -e "${YELLOW}⏱️  Actualizando cada 3 segundos... (Ctrl+C para salir)${NC}"
+    sleep 3
+done

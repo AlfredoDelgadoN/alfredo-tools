@@ -1,0 +1,46 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "📊 Información de Memoria"
+
+echo -e "${BLUE}💾 ESTADO DE LA MEMORIA${RESET}"
+separator
+
+# Memoria RAM
+echo "1️⃣ Memoria RAM:"
+free -h | awk '/Mem:/ {
+    print "  Total: " $2
+    print "  Usada: " $3 " (" $3/$2*100 "%)"
+    print "  Libre: " $4
+    print "  Búfer/Caché: " $6
+    print "  Disponible: " $7
+}'
+
+echo
+echo "2️⃣ Swap:"
+free -h | awk '/Swap:/ {
+    if ($2 != "0B") {
+        print "  Total: " $2
+        print "  Usado: " $3
+        print "  Libre: " $4
+    } else {
+        print "  No configurado"
+    }
+}'
+
+echo
+echo "3️⃣ Procesos que más memoria consumen:"
+ps aux --sort=-%mem | head -6 | tail -5 | while read line; do
+    mem=$(echo "$line" | awk '{print $4}')
+    cmd=$(echo "$line" | awk '{print $11}')
+    echo "  $cmd ($mem% MEM)"
+done
+
+echo
+echo "4️⃣ Estadísticas de memoria:"
+vmstat -s | head -10
+
+echo
+ok "Información de memoria completada"
