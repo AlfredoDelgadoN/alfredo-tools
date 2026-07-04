@@ -1,55 +1,29 @@
 #!/bin/bash
 
-# Determinar la ruta base
-if [ -n "$ALFREDO_BASE" ]; then
-    BASE="$ALFREDO_BASE"
-else
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    BASE="$(cd "$SCRIPT_DIR/.." && pwd)"
-fi
-
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 source "$BASE/lib/ui"
 
 title "Alfredo Tools - Speed"
 
 # Verificar dependencias
-MISSING=()
-for cmd in speedtest jq bc; do
+for cmd in speedtest-cli jq bc; do
     if ! command -v $cmd &>/dev/null; then
-        MISSING+=($cmd)
+        error "El comando '$cmd' no está instalado"
+        echo "  Instala con: sudo apt install $cmd"
+        exit 1
     fi
 done
-
-if [ ${#MISSING[@]} -gt 0 ]; then
-    error "Dependencias faltantes: ${MISSING[*]}"
-    echo
-    echo "  Instala con:"
-    echo "  sudo apt install ${MISSING[*]}"
-    echo
-    echo "  Para speedtest-cli:"
-    echo "  sudo apt install speedtest-cli"
-    echo "  o"
-    echo "  pip install speedtest-cli"
-    exit 1
-fi
-
-# Verificar que speedtest funciona
-if ! speedtest --version >/dev/null 2>&1; then
-    error "speedtest-cli no funciona correctamente"
-    echo "  Prueba reinstalarlo:"
-    echo "  sudo apt install --reinstall speedtest-cli"
-    exit 1
-fi
-
-TMPFILE=$(mktemp)
-INICIO=$(date +%s)
 
 echo -e "${BLUE}📊 Ejecutando prueba de velocidad...${RESET}"
 echo "  Conectando al servidor más cercano..."
 echo "  (Esto puede tomar 30-60 segundos)"
 
-# Ejecutar speedtest en background
-speedtest --format=json > "$TMPFILE" 2>/dev/null &
+# Usar speedtest-cli con formato simple (más confiable)
+TMPFILE=$(mktemp)
+INICIO=$(date +%s)
+
+# Ejecutar speedtest en background con formato simple
+speedtest-cli --simple > "$TMPFILE" 2>/dev/null &
 PID=$!
 
 # Spinner
@@ -76,47 +50,33 @@ if [ ! -s "$TMPFILE" ]; then
     exit 1
 fi
 
-JSON=$(cat "$TMPFILE")
+# Extraer datos del formato simple
+PING=$(grep "Ping:" "$TMPFILE" | awk '{print $2}')
+DOWNLOAD=$(grep "Download:" "$TMPFILE" | awk '{print $2}')
+UPLOAD=$(grep "Upload:" "$TMPFILE" | awk '{print $2}')
 rm -f "$TMPFILE"
 
-# Validar JSON
-if ! echo "$JSON" | jq empty 2>/dev/null; then
-    error "Error al procesar los datos de speedtest"
-    echo "  Respuesta recibida:"
-    echo "$JSON" | head -5
+# Verificar que se obtuvieron datos
+if [ -z "$PING" ] || [ -z "$DOWNLOAD" ] || [ -z "$UPLOAD" ]; then
+    error "Datos incompletos de speedtest"
+    echo "  Intenta ejecutar manualmente: speedtest-cli --simple"
     exit 1
 fi
 
-# Extraer datos
-ISP=$(echo "$JSON" | jq -r '.isp // "Desconocido"')
-SERVER=$(echo "$JSON" | jq -r '.server.name // "Desconocido"')
-LOCATION=$(echo "$JSON" | jq -r '.server.location // ""')
-PUBLIC_IP=$(echo "$JSON" | jq -r '.interface.externalIp // "Desconocida"')
-PING=$(echo "$JSON" | jq -r '.ping.latency // 0' | awk '{printf "%.2f",$1}')
-JITTER=$(echo "$JSON" | jq -r '.ping.jitter // 0' | awk '{printf "%.2f",$1}')
-DOWNLOAD=$(echo "$JSON" | jq -r '.download.bandwidth // 0' | awk '{printf "%.2f", $1*8/1000000}')
-UPLOAD=$(echo "$JSON" | jq -r '.upload.bandwidth // 0' | awk '{printf "%.2f", $1*8/1000000}')
-LOSS=$(echo "$JSON" | jq -r '.packetLoss // 0')
-
+# Mostrar resultados
 echo
 echo -e "${BLUE}📡 Resultados de la prueba${RESET}"
 separator
 
-field "Proveedor" "$ISP"
-field "Servidor" "$SERVER ${LOCATION:+($LOCATION)}"
-field "IP Pública" "$PUBLIC_IP"
-field "Duración" "${TIEMPO}s"
+# Determinar ISP (si está disponible)
+ISP=$(speedtest-cli --simple 2>/dev/null | grep "Testing from" | sed 's/Testing from //' | cut -d'(' -f1 | xargs)
+if [ -n "$ISP" ]; then
+    field "Proveedor" "$ISP"
+fi
 
-echo
 field "Ping" "$PING ms"
-if [ "$JITTER" != "0" ] && [ -n "$JITTER" ]; then
-    field "Jitter" "$JITTER ms"
-fi
-field "Descarga" "$DOWNLOAD Mbps"
-field "Subida" "$UPLOAD Mbps"
-if [ "$LOSS" != "0" ] && [ -n "$LOSS" ]; then
-    field "Pérdida" "$LOSS%"
-fi
+field "Descarga" "$DOWNLOAD Mbit/s"
+field "Subida" "$UPLOAD Mbit/s"
 
 echo
 # Evaluar calidad
@@ -134,6 +94,7 @@ else
     warn "📡 Conexión MUY LENTA (satelital/móvil)"
 fi
 
+# Recomendaciones
 echo
 echo -e "${BLUE}💡 Recomendaciones${RESET}"
 separator
@@ -146,3 +107,6 @@ elif (( $(echo "$PING < 100" | bc -l 2>/dev/null || echo 0) )); then
 else
     echo "  ❌ Alta latencia - no recomendado para gaming"
 fi
+
+echo
+ok "Prueba de velocidad completada"
