@@ -1,0 +1,9 @@
+# 1. Instalar WSL 2
+wsl --install
+
+# 2. Reiniciar Windows
+
+# 3. Abrir Ubuntu y ejecutar:
+git clone https://github.com/AlfredoDelgadoN/alfredo-tools.git
+cd alfredo-tools
+./install.sh

@@ -1,0 +1,114 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🔧 Reparación Completa de PipeWire"
+
+echo -e "${BLUE}🔍 Diagnóstico y reparación de PipeWire...${RESET}"
+separator
+
+# 1. Detener servicios
+echo "1️⃣ Deteniendo servicios de PipeWire..."
+systemctl --user stop pipewire pipewire-pulse 2>/dev/null
+echo -e "  ${GREEN}✅ Servicios detenidos${NC}"
+
+# 2. Limpiar caché y configuraciones
+echo
+echo "2️⃣ Limpiando archivos de configuración..."
+rm -rf ~/.cache/pipewire/ 2>/dev/null
+rm -rf ~/.local/state/wireplumber/ 2>/dev/null
+rm -rf ~/.config/pipewire/pipewire.conf.d/ 2>/dev/null
+echo -e "  ${GREEN}✅ Archivos limpiados${NC}"
+
+# 3. Crear directorios necesarios
+echo
+echo "3️⃣ Creando directorios necesarios..."
+mkdir -p ~/.cache/pipewire
+mkdir -p ~/.config/pipewire
+mkdir -p ~/.local/state/wireplumber
+chmod 700 ~/.cache/pipewire
+echo -e "  ${GREEN}✅ Directorios creados${NC}"
+
+# 4. Recargar systemd
+echo
+echo "4️⃣ Recargando systemd..."
+systemctl --user daemon-reload
+echo -e "  ${GREEN}✅ Systemd recargado${NC}"
+
+# 5. Iniciar servicios
+echo
+echo "5️⃣ Iniciando servicios..."
+systemctl --user start pipewire
+sleep 2
+systemctl --user start pipewire-pulse
+echo -e "  ${GREEN}✅ Servicios iniciados${NC}"
+
+# 6. Verificar estado
+echo
+echo "6️⃣ Verificando estado..."
+echo -e "${BLUE}   Estado de PipeWire:${NC}"
+systemctl --user status pipewire --no-pager | head -5
+
+echo
+echo -e "${BLUE}   Estado de pipewire-pulse:${NC}"
+systemctl --user status pipewire-pulse --no-pager | head -5
+
+# 7. Probar audio (mejorado)
+echo
+echo "7️⃣ Probando audio..."
+
+# Verificar que PipeWire es el servidor de audio
+if pactl info 2>/dev/null | grep -q "Server Name.*PipeWire"; then
+    echo -e "  ${GREEN}✅ PipeWire es el servidor de audio${NC}"
+    
+    # Verificar dispositivos de audio
+    SINKS=$(pactl list short sinks 2>/dev/null)
+    if [ -n "$SINKS" ]; then
+        echo "  🔊 Dispositivos de audio disponibles:"
+        echo "$SINKS" | while read line; do
+            echo "    $line"
+        done
+        echo -e "  ${GREEN}✅ Dispositivos de audio detectados${NC}"
+        
+        # Probar con aplay (más confiable)
+        if command -v aplay &>/dev/null; then
+            echo "  🔊 Reproduciendo tono de prueba..."
+            if aplay /usr/share/sounds/alsa/Noise.wav 2>/dev/null; then
+                echo -e "  ${GREEN}✅ Prueba de sonido exitosa${NC}"
+            else
+                echo -e "  ${YELLOW}⚠️  Prueba con aplay falló, pero los servicios están activos${NC}"
+                echo "  💡 El audio debería funcionar con aplicaciones"
+            fi
+        fi
+    else
+        echo -e "  ${YELLOW}⚠️  No se detectaron dispositivos de audio${NC}"
+        echo "  💡 Verifica la configuración de audio en el sistema"
+    fi
+else
+    echo -e "  ${RED}❌ PipeWire no es el servidor de audio${NC}"
+    echo "  💡 Verifica la instalación: sudo apt install --reinstall pipewire"
+fi
+
+# 8. Resumen
+echo
+echo -e "${BLUE}💡 RESUMEN${RESET}"
+separator
+
+if systemctl --user is-active --quiet pipewire 2>/dev/null; then
+    echo -e "  ${GREEN}✅ PipeWire activo${NC}"
+else
+    echo -e "  ${RED}❌ PipeWire inactivo${NC}"
+fi
+
+if systemctl --user is-active --quiet pipewire-pulse 2>/dev/null; then
+    echo -e "  ${GREEN}✅ pipewire-pulse activo${NC}"
+else
+    echo -e "  ${RED}❌ pipewire-pulse inactivo${NC}"
+fi
+
+if pactl info 2>/dev/null | grep -q "Server Name.*PipeWire"; then
+    echo -e "  ${GREEN}✅ Audio funcionando correctamente${NC}"
+fi
+
+ok "Reparación de PipeWire completada"

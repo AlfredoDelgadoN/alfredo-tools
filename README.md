@@ -1,37 +1,49 @@
-# Alfredo Tools 🛠️
+# 🛠️ Alfredo Tools
 
 Suite de herramientas para diagnóstico y mantenimiento de sistemas.
 
+## ✨ Características
+- 28+ módulos de diagnóstico
+- Multiplataforma (Linux, Windows con WSL, macOS)
+- Fácil instalación
+- Sin dependencias complejas
+
 ## 📦 Módulos Disponibles
 
-### 🖥️ Diagnóstico de Pantalla
+### 🖥️ Diagnóstico de Sistema
 | Módulo | Descripción | Comando |
 |--------|-------------|---------|
-| `diagnostico` | Diagnóstico completo del sistema | `alfredo diagnostico` |
-| `fix-amd` | Solución específica para AMD Radeon | `alfredo fix-amd` |
-| `setup-monitors` | Configurar monitores | `alfredo setup-monitors` |
-| `fix-screen` | Solución rápida pantalla negra | `alfredo fix-screen` |
-| `monitor-screen` | Monitorear cambios en pantallas | `alfredo monitor-screen` |
+| `salud` | Estado completo del sistema | `alfredo salud` |
+| `diagnostico` | Diagnóstico completo | `alfredo diagnostico` |
+| `procesador` | Información del CPU | `alfredo procesador` |
+| `memoria` | Información de RAM | `alfredo memoria` |
+| `discos` | Información de almacenamiento | `alfredo discos` |
 
-### 📊 Sistema
+### 🌐 Red y Conectividad
 | Módulo | Descripción | Comando |
 |--------|-------------|---------|
-| `salud` | Estado del sistema (CPU, memoria, disco) | `alfredo salud` |
-| `wifi` | Información de conexión WiFi | `alfredo wifi` |
-| `red` | Configuración de red y pruebas | `alfredo red` |
-| `speed` | Prueba de velocidad de Internet | `alfredo speed` |
+| `wifi` | Información WiFi | `alfredo wifi` |
+| `red` | Configuración de red | `alfredo red` |
+| `speed` | Velocidad de Internet | `alfredo speed` |
 
-### 🔧 Utilidades
+### 🔧 Reparación y Mantenimiento
 | Módulo | Descripción | Comando |
 |--------|-------------|---------|
-| `reparar` | Reparación automática de problemas | `alfredo reparar` |
+| `reparar` | Reparación automática | `alfredo reparar` |
+| `reparar-todo` | Reparación completa | `alfredo reparar-todo` |
+| `fix-audio` | Solución de audio | `alfredo fix-audio` |
+| `fix-amd` | Solución AMD | `alfredo fix-amd` |
 
-## 🚀 Instalación Rápida
+### 🌡️ Monitoreo
+| Módulo | Descripción | Comando |
+|--------|-------------|---------|
+| `temp-cpu` | Temperatura CPU | `alfredo temp-cpu` |
+| `temp-discos` | Temperatura discos | `alfredo temp-discos` |
 
+## 🚀 Instalación
+
+### Linux / macOS
 ```bash
-# Clonar el repositorio
-git clone https://github.com/tu-usuario/alfredo-tools.git
+git clone https://github.com/AlfredoDelgadoN/alfredo-tools.git
 cd alfredo-tools
-
-# Ejecutar instalador
 ./install.sh

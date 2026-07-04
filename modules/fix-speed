@@ -1,0 +1,89 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🔧 Reparación de Speed Test"
+
+echo -e "${BLUE}🔍 Diagnosticando speedtest-cli...${RESET}"
+separator
+
+# 1. Verificar conectividad
+echo "1️⃣ Verificando conectividad a Internet..."
+if ping -c 3 8.8.8.8 >/dev/null 2>&1; then
+    echo -e "  ${GREEN}✅ Conectividad OK${NC}"
+else
+    echo -e "  ${RED}❌ Sin conexión a Internet${NC}"
+    echo "  💡 Verifica tu conexión de red"
+    exit 1
+fi
+
+# 2. Verificar DNS
+echo
+echo "2️⃣ Verificando DNS..."
+if ping -c 3 google.com >/dev/null 2>&1; then
+    echo -e "  ${GREEN}✅ DNS OK${NC}"
+else
+    echo -e "  ${YELLOW}⚠️  Problemas con DNS${NC}"
+    echo "  💡 Usando DNS alternativo..."
+    echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf
+fi
+
+# 3. Verificar instalación de speedtest-cli
+echo
+echo "3️⃣ Verificando speedtest-cli..."
+if command -v speedtest-cli &>/dev/null; then
+    echo -e "  ${GREEN}✅ Instalado: $(speedtest-cli --version 2>/dev/null | head -1)${NC}"
+else
+    echo -e "  ${YELLOW}⚠️  No instalado${NC}"
+    echo "  📦 Instalando..."
+    sudo apt install -y speedtest-cli
+fi
+
+# 4. Probar speedtest-cli
+echo
+echo "4️⃣ Probando speedtest-cli..."
+echo "  🔄 Conectando a servidores..."
+if speedtest-cli --simple >/dev/null 2>&1; then
+    echo -e "  ${GREEN}✅ Funciona correctamente${NC}"
+else
+    echo -e "  ${YELLOW}⚠️  No responde, reinstalando...${NC}"
+    
+    # Reinstalar con pip
+    echo "  📦 Instalando con pip..."
+    pip3 install --upgrade speedtest-cli --user 2>/dev/null || sudo pip3 install speedtest-cli
+    
+    # Verificar instalación
+    if command -v speedtest-cli &>/dev/null; then
+        echo -e "  ${GREEN}✅ Instalado con pip${NC}"
+    else
+        echo -e "  ${RED}❌ Error en la instalación${NC}"
+        echo "  💡 Instalación alternativa:"
+        echo "     sudo apt install speedtest-cli"
+    fi
+fi
+
+# 5. Probar con alfredo
+echo
+echo "5️⃣ Probando alfredo speed..."
+if alfredo speed 2>/dev/null; then
+    echo -e "  ${GREEN}✅ Alfredo speed funciona${NC}"
+else
+    echo -e "  ${YELLOW}⚠️  Prueba manual: speedtest-cli --simple${NC}"
+fi
+
+# 6. Resumen
+echo
+echo -e "${BLUE}💡 RECOMENDACIONES${RESET}"
+separator
+
+echo "  📌 Si speedtest-cli no funciona:"
+echo "     • Verifica que el puerto 8080 esté abierto"
+echo "     • Prueba: speedtest-cli --source [tu-IP]"
+echo "     • Usa: speedtest-cli --server [servidor-ID]"
+echo
+echo "  🔧 Si el módulo speed falla:"
+echo "     • Ejecuta: alfredo fix-speed"
+echo "     • Reinstala: sudo apt install --reinstall speedtest-cli"
+
+ok "Diagnóstico de speed completado"

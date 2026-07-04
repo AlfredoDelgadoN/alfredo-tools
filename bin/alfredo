@@ -27,6 +27,8 @@ show_help() {
     echo "  alfredo reparar-todo     - Reparación completa"
     echo "  alfredo fix-amd          - Solución específica AMD"
     echo "  alfredo fix-audio        - Solución de audio"
+    echo "  alfredo fix-pulse        - Solución de pulse audio"
+    echo "  alfredo fix-pipewire     - Solución de pipewire audio"
     echo "  alfredo fix-hdmi         - Solución problemas HDMI"
     echo "  alfredo fix-screen       - Solución rápida pantalla negra"
     echo "  alfredo screen-fix-quick - Solución rápida pantalla negra ⚡"
@@ -89,7 +91,7 @@ case "$1" in
         exec "$BASE/modules/$1"
         ;;
     # Reparación
-    reparar|reparar-todo|fix-amd|fix-audio|fix-hdmi|fix-screen|screen-fix-quick)
+    reparar|reparar-todo|fix-amd|fix-audio|fix-hdmi|fix-screen|screen-fix-quick|fix-pulse|fix-pipewire)
         check_module "$1"
         exec "$BASE/modules/$1"
         ;;

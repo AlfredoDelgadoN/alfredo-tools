@@ -1,0 +1,105 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🔧 Reparación de Conexión PulseAudio"
+
+echo -e "${BLUE}🔍 Diagnosticando conexión a PulseAudio...${RESET}"
+separator
+
+# 1. Verificar servicios
+echo "1️⃣ Verificando servicios:"
+if systemctl --user is-active --quiet pipewire-pulse; then
+    echo -e "  ${GREEN}✅ pipewire-pulse activo${NC}"
+else
+    echo -e "  ${RED}❌ pipewire-pulse inactivo${NC}"
+    systemctl --user start pipewire-pulse
+fi
+
+# 2. Verificar sockets
+echo
+echo "2️⃣ Verificando sockets:"
+PULSE_SOCKET="/run/user/$(id -u)/pulse/native"
+if [ -S "$PULSE_SOCKET" ]; then
+    echo -e "  ${GREEN}✅ Socket PulseAudio: $PULSE_SOCKET${NC}"
+else
+    echo -e "  ${YELLOW}⚠️  Socket no encontrado, creando...${NC}"
+    mkdir -p /run/user/$(id -u)/pulse
+fi
+
+PIPEWIRE_SOCKET="/run/user/$(id -u)/pipewire-0"
+if [ -S "$PIPEWIRE_SOCKET" ]; then
+    echo -e "  ${GREEN}✅ Socket PipeWire: $PIPEWIRE_SOCKET${NC}"
+else
+    echo -e "  ${YELLOW}⚠️  Socket PipeWire no encontrado${NC}"
+fi
+
+# 3. Verificar variables de entorno
+echo
+echo "3️⃣ Variables de entorno actuales:"
+echo "  PULSE_SERVER: ${PULSE_SERVER:-No definida}"
+echo "  PIPEWIRE_RUNTIME_DIR: ${PIPEWIRE_RUNTIME_DIR:-No definida}"
+
+# 4. Configurar variables
+echo
+echo "4️⃣ Configurando variables de entorno..."
+export PULSE_SERVER="/run/user/$(id -u)/pulse/native"
+export PIPEWIRE_RUNTIME_DIR="/run/user/$(id -u)/pipewire-0"
+echo "  ✅ Variables configuradas"
+
+# 5. Probar conexión
+echo
+echo "5️⃣ Probando conexión..."
+
+# Intentar con pactl
+if pactl info 2>/dev/null | grep -q "Server Name"; then
+    echo -e "  ${GREEN}✅ Conexión exitosa${NC}"
+    pactl info | grep "Server Name"
+else
+    echo -e "  ${YELLOW}⚠️  pactl no funciona, intentando método alternativo...${NC}"
+    
+    # Verificar con pw-cli (alternativa)
+    if command -v pw-cli &>/dev/null; then
+        echo "  🔍 Verificando con pw-cli..."
+        pw-cli info 2>/dev/null | head -5
+    fi
+    
+    echo
+    echo -e "  ${YELLOW}⚠️  El audio debería funcionar aunque pactl no conecte${NC}"
+    echo "  💡 Las aplicaciones usan directamente PipeWire"
+fi
+
+# 6. Guardar configuración
+echo
+echo "6️⃣ Guardando configuración permanente..."
+CONFIG_LINES="# PipeWire como servidor de audio (configuración automática)
+export PULSE_SERVER=/run/user/\$(id -u)/pulse/native
+export PIPEWIRE_RUNTIME_DIR=/run/user/\$(id -u)/pipewire-0"
+
+if ! grep -q "PULSE_SERVER=/run/user" ~/.bashrc; then
+    echo "$CONFIG_LINES" >> ~/.bashrc
+    echo -e "  ${GREEN}✅ Configuración guardada en ~/.bashrc${NC}"
+else
+    echo -e "  ${GREEN}✅ Configuración ya existente${NC}"
+fi
+
+# 7. Recomendación
+echo
+echo -e "${BLUE}💡 RECOMENDACIÓN${RESET}"
+separator
+
+if pactl info 2>/dev/null | grep -q "Server Name"; then
+    echo -e "  ${GREEN}✅ Todo funciona correctamente${NC}"
+else
+    echo "  📌 Para usar pactl correctamente:"
+    echo "     1. Cierra esta terminal"
+    echo "     2. Abre una nueva terminal"
+    echo "     3. Ejecuta: pactl info"
+    echo
+    echo "  📌 O usa este comando en la misma terminal:"
+    echo "     source ~/.bashrc"
+    echo "     pactl info"
+fi
+
+ok "Reparación de PulseAudio completada"

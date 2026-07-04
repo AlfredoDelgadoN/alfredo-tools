@@ -1,0 +1,37 @@
+alfredo-tools/
+├── .github/
+│   └── workflows/
+│       └── ci.yml                 # CI/CD para pruebas automáticas
+├── bin/
+│   └── alfredo                    # Script principal (Linux/WSL)
+├── lib/
+│   ├── core.sh                    # Funciones core
+│   ├── net.sh                     # Funciones de red
+│   ├── system.sh                  # Funciones de sistema
+│   └── ui.sh                      # UI y colores
+├── modules/
+│   ├── diagnostico                # Diagnóstico completo
+│   ├── discos                     # Información de discos
+│   ├── fix-audio                  # Solución de audio
+│   ├── fix-pipewire               # Reparación PipeWire
+│   ├── fix-pulse                  # Reparación PulseAudio
+│   ├── memoria                    # Información de memoria
+│   ├── procesador                 # Información del procesador
+│   ├── red                        # Información de red
+│   ├── reparar                    # Reparación automática
+│   ├── salud                      # Estado del sistema
+│   ├── speed                      # Velocidad de Internet
+│   ├── temp-cpu                   # Temperatura CPU
+│   ├── temp-discos                # Temperatura discos
+│   ├── tiempo-arranque            # Tiempo de arranque
+│   ├── verificar-todo             # Verificación completa
+│   └── wifi                       # Información WiFi
+├── docs/
+│   ├── INSTALL.md                 # Guía de instalación detallada
+│   └── USAGE.md                   # Guía de uso
+├── install.sh                     # Instalador para Linux/macOS
+├── install.ps1                    # Instalador para Windows
+├── README.md                      # Documentación principal
+├── CHANGELOG.md                   # Historial de cambios
+├── LICENSE                        # Licencia MIT
+└── .gitignore                     # Archivos ignorados por Git
