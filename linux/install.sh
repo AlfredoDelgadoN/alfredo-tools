@@ -1,52 +1,100 @@
 #!/bin/bash
+# install.sh - Instalador de Alfredo Tools (Linux)
 
-echo "🚀 Instalando Alfredo Tools v0.9..."
+set -e
+
+# ============================================================
+# DETECTAR DIRECTORIO BASE
+# ============================================================
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+echo "🚀 Instalando Alfredo Tools desde: $SCRIPT_DIR"
 echo "========================================"
-echo
+echo ""
 
-# Verificar dependencias
+# ============================================================
+# VERIFICAR DEPENDENCIAS
+# ============================================================
 echo "📦 Verificando dependencias..."
-DEPENDENCIAS=(bash awk grep sed ping iw jq bc speedtest-cli smartmontools lm-sensors)
-FALTANTES=()
 
-for cmd in "${DEPENDENCIAS[@]}"; do
+MISSING=()
+for cmd in git curl wget; do
     if ! command -v $cmd &>/dev/null; then
-        FALTANTES+=($cmd)
+        MISSING+=($cmd)
     fi
 done
 
-if [ ${#FALTANTES[@]} -gt 0 ]; then
-    echo "⚠️  Dependencias faltantes: ${FALTANTES[*]}"
-    echo "   Instala con: sudo apt install ${FALTANTES[*]}"
-    read -p "¿Continuar de todas formas? (s/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Ss]$ ]]; then
-        exit 1
-    fi
-else
-    echo "✅ Todas las dependencias instaladas"
+if [ ${#MISSING[@]} -gt 0 ]; then
+    echo "⚠️  Dependencias faltantes: ${MISSING[*]}"
+    echo "   Instalando..."
+    sudo apt update -qq
+    sudo apt install -y ${MISSING[*]}
 fi
 
-# Dar permisos
-echo
+# Dependencias opcionales
+echo "📦 Instalando dependencias opcionales..."
+if command -v apt &>/dev/null; then
+    sudo apt update -qq
+    sudo apt install -y jq bc speedtest-cli smartmontools lm-sensors || true
+fi
+
+echo "✅ Dependencias verificadas"
+
+# ============================================================
+# CONFIGURAR PERMISOS
+# ============================================================
+echo ""
 echo "🔧 Configurando permisos..."
-chmod +x ~/Documentos/alfredo-tools/bin/alfredo
-chmod +x ~/Documentos/alfredo-tools/modules/*
-chmod +x ~/Documentos/alfredo-tools/lib/*
 
-# Crear enlace simbólico
-echo
+# Usar rutas relativas
+chmod +x "$SCRIPT_DIR/bin/alfredo"
+chmod +x "$SCRIPT_DIR/modules/"* 2>/dev/null || true
+chmod +x "$SCRIPT_DIR/lib/"* 2>/dev/null || true
+
+echo "✅ Permisos configurados"
+
+# ============================================================
+# CREAR ENLACE GLOBAL
+# ============================================================
+echo ""
 echo "🔗 Creando enlace global..."
-sudo ln -sf ~/Documentos/alfredo-tools/bin/alfredo /usr/local/bin/alfredo
 
-# Verificar instalación
-echo
-echo "✅ Instalación completada"
-echo
-echo "📊 Resumen:"
-echo "  📂 Ubicación: ~/Documentos/alfredo-tools"
-echo "  🔗 Comando: alfredo"
-echo "  📦 Módulos: $(ls -1 ~/Documentos/alfredo-tools/modules | wc -l)"
-echo
-echo "📖 Para ver todos los módulos:"
-echo "  alfredo help"
+# Crear enlace simbólico en /usr/local/bin
+sudo ln -sf "$SCRIPT_DIR/bin/alfredo" /usr/local/bin/alfredo
+echo "✅ Enlace creado en /usr/local/bin/alfredo"
+
+# ============================================================
+# VERIFICAR INSTALACIÓN
+# ============================================================
+echo ""
+echo "🧪 Verificando instalación..."
+
+if command -v alfredo &>/dev/null; then
+    echo "✅ Alfredo Tools instalado correctamente"
+    echo "   📍 Ubicación: $(which alfredo)"
+    echo "   📦 Versión: $(alfredo version 2>/dev/null || echo "v1.0")"
+else
+    echo "⚠️  Alfredo Tools no está en el PATH"
+    echo "   Para usar, ejecuta: $SCRIPT_DIR/bin/alfredo"
+fi
+
+# ============================================================
+# RESUMEN FINAL
+# ============================================================
+echo ""
+echo "========================================"
+echo "          ✅ ¡Instalación Completada!"
+echo "========================================"
+echo ""
+echo "📖 Para usar Alfredo Tools:"
+echo ""
+echo "   alfredo salud          - Estado del sistema"
+echo "   alfredo speed          - Velocidad de Internet"
+echo "   alfredo diagnostico    - Diagnóstico completo"
+echo "   alfredo help           - Ver todos los comandos"
+echo ""
+echo "📌 Para más información:"
+echo "   https://github.com/AlfredoDelgadoN/alfredo-tools"
+echo ""
+echo "========================================"
