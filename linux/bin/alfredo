@@ -27,6 +27,7 @@ print_header() {
 
 print_category() {
     echo -e "${YELLOW}${BOLD}█▓▒░ $1 ░▒▓█${RESET}"
+    # Eliminar la línea en blanco después de la categoría
 }
 
 print_two_columns() {
@@ -61,7 +62,6 @@ print_two_columns() {
             printf "  ${GREEN}▶${RESET} ${BOLD}%-18s${RESET} %s\n" "$name1" "$desc1"
         fi
     done
-    echo ""
 }
 
 get_description() {
@@ -71,7 +71,7 @@ get_description() {
     case "$module" in
         # Diagnóstico
         "diagnostico") desc=" Diagnóstico completo" ;;
-        "diagnostico-memoria") desc="Diagnóstico de memoria" ;;
+        "diagnostico-memoria") desc="Diagnóstico RAM" ;;
         "analizar-logs") desc=" Análisis de logs" ;;
         "estado-actual") desc="Estado en tiempo real" ;;
         "verificar-todo") desc="Verificación completa" ;;
@@ -168,8 +168,7 @@ show_menu() {
     print_two_columns \
         "diagnostico" "diagnostico-memoria" \
         "analizar-logs" "estado-actual" \
-        "verificar-todo"
-    
+        "verificar-todo"   
     # ============================================================
     # CATEGORÍA: SISTEMA
     # ============================================================
@@ -178,8 +177,7 @@ show_menu() {
         "salud" "info" \
         "procesador" "memoria" \
         "discos" "nvme-status" \
-        "tiempo-arranque" "ultimo-arranque"
-    
+        "tiempo-arranque" "ultimo-arranque"    
     # ============================================================
     # CATEGORÍA: REPARACIÓN
     # ============================================================
@@ -189,48 +187,42 @@ show_menu() {
         "fix-amd" "fix-audio" \
         "fix-pipewire" "fix-pulse" \
         "fix-hdmi" "fix-screen" \
-        "screen-fix-quick" "fix-speed"
-    
+        "screen-fix-quick" "fix-speed"    
     # ============================================================
     # CATEGORÍA: RED Y CONECTIVIDAD
     # ============================================================
     print_category "🌐 RED Y CONECTIVIDAD"
     print_two_columns \
         "red" "wifi" \
-        "speed"
-    
+        "speed"    
     # ============================================================
     # CATEGORÍA: TEMPERATURA
     # ============================================================
     print_category "🌡️  TEMPERATURA"
     print_two_columns \
         "temp-cpu" "temp-discos" \
-        "temp-discos-simple"
-    
+        "temp-discos-simple"    
     # ============================================================
     # CATEGORÍA: AUDIO
     # ============================================================
     print_category "🔊 AUDIO"
     print_two_columns \
         "check-audio" "configurar-audio" \
-        "monitor-audio" "test-audio"
-    
+        "monitor-audio" "test-audio"    
     # ============================================================
     # CATEGORÍA: PANTALLAS Y GRÁFICOS
     # ============================================================
     print_category "🖥️  PANTALLAS Y GRÁFICOS"
     print_two_columns \
         "setup-monitors" "monitor-screen" \
-        "pantalla-negra"
-    
+        "pantalla-negra"    
     # ============================================================
     # CATEGORÍA: OPTIMIZACIÓN
     # ============================================================
     print_category "🚀 OPTIMIZACIÓN"
     print_two_columns \
         "optimizar-arranque" "optimizar-memoria" \
-        "optimizar-soldada"
-    
+        "optimizar-soldada"    
     # ============================================================
     # CATEGORÍA: OTROS
     # ============================================================
