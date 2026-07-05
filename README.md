@@ -65,3 +65,21 @@ cd alfredo-tools/linux
 
 # ¡Listo! Ahora ejecuta:
 alfredo
+
+🪟 Windows
+
+# Clonar el repositorio
+git clone https://github.com/AlfredoDelgadoN/alfredo-tools.git
+cd alfredo-tools\windows
+
+# Instalar dependencias
+pip install -r requirements.txt
+
+# Ejecutar
+python alfredo.py salud
+
+🪟 Windows (WSL)
+
+# Abrir PowerShell como Administrador
+Set-ExecutionPolicy Bypass -Scope Process -Force
+iex (iwr -useb https://raw.githubusercontent.com/AlfredoDelgadoN/alfredo-tools/main/install.ps1)
