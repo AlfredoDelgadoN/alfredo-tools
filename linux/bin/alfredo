@@ -136,7 +136,9 @@ get_description() {
 }
 
 print_footer() {
+    local total_modules=$(ls -1 "$BASE/modules/" 2>/dev/null | wc -l)
     echo -e "${DIM}───────────────────────────────────────────────────────────────────────────────${RESET}"
+    echo -e "${CYAN}📦 Módulos disponibles:${RESET} ${BOLD}$total_modules${RESET}"
     echo -e "${CYAN}💡 Uso:${RESET} ${BOLD}alfredo <módulo>${RESET}  ${DIM}Ejemplo:${RESET} ${BOLD}alfredo salud${RESET}"
     echo -e "${CYAN}📖 Ayuda:${RESET} ${BOLD}alfredo help${RESET}  ${DIM}o${RESET} ${BOLD}alfredo --help${RESET}"
     echo ""
