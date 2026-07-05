@@ -1,0 +1,296 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "💿 Diagnóstico SMART de Discos"
+
+# ============================================================
+# FUNCIONES DE DIAGNÓSTICO
+# ============================================================
+
+# Verificar si smartctl está instalado
+if ! command -v smartctl &>/dev/null; then
+    error "smartctl no está instalado"
+    echo "  Instala con: sudo apt install smartmontools -y"
+    exit 1
+fi
+
+# Función para analizar NVMe
+analyze_nvme() {
+    local DEVICE="$1"
+    
+    echo -e "${BOLD}${CYAN}📀 Disco: $(basename $DEVICE) (NVMe)${RESET}"
+    separator
+    
+    # Obtener información básica
+    echo -e "${BLUE}📋 Información del disco:${RESET}"
+    sudo smartctl -i "$DEVICE" 2>/dev/null | grep -E "Model Number:|Serial Number:|Firmware Version:|NVMe Version:|Total NVM Capacity:" | sed 's/^/  /'
+    echo
+    
+    # Obtener salud
+    echo -e "${BLUE}🏥 Salud SMART:${RESET}"
+    HEALTH=$(sudo smartctl -H "$DEVICE" 2>/dev/null | grep "SMART overall-health" | cut -d: -f2 | xargs)
+    if echo "$HEALTH" | grep -qi "PASSED"; then
+        echo -e "  ${GREEN}✅ $HEALTH${RESET}"
+    else
+        echo -e "  ${RED}❌ $HEALTH${RESET}"
+    fi
+    echo
+    
+    # Obtener atributos NVMe
+    echo -e "${BLUE}📊 Atributos NVMe:${RESET}"
+    
+    # Leer toda la información SMART de una vez
+    SMART_INFO=$(sudo smartctl -A "$DEVICE" 2>/dev/null)
+    
+    # Temperatura
+    TEMP=$(echo "$SMART_INFO" | grep -E "^Temperature:" | awk '{print $2}' | sed 's/°C//')
+    if [ -n "$TEMP" ] && [ "$TEMP" -gt 0 ] 2>/dev/null; then
+        echo -n "  🌡️  Temperatura: ${TEMP}°C"
+        if [ "$TEMP" -gt 70 ]; then
+            echo -e "  ${RED}🔥 CRÍTICA!${RESET}"
+        elif [ "$TEMP" -gt 60 ]; then
+            echo -e "  ${YELLOW}⚠️  Elevada${RESET}"
+        elif [ "$TEMP" -gt 50 ]; then
+            echo -e "  ${YELLOW}⚠️  Alta${RESET}"
+        else
+            echo -e "  ${GREEN}✅ Normal${RESET}"
+        fi
+    fi
+    
+    # Porcentaje usado
+    PERCENT=$(echo "$SMART_INFO" | grep "Percentage Used:" | awk '{print $3}' | sed 's/%//')
+    if [ -n "$PERCENT" ] && [ "$PERCENT" -gt 0 ] 2>/dev/null; then
+        REMAINING=$((100 - PERCENT))
+        echo -e "  📊 Vida útil estimada: ${GREEN}$REMAINING%${RESET} restante"
+        
+        if [ "$PERCENT" -gt 80 ]; then
+            echo -e "     ${RED}⚠️  Desgaste alto! Considera reemplazar el disco${RESET}"
+        elif [ "$PERCENT" -gt 50 ]; then
+            echo -e "     ${YELLOW}⚠️  Desgaste moderado${RESET}"
+        else
+            echo -e "     ${GREEN}✅ Desgaste bajo${RESET}"
+        fi
+    fi
+    
+    # Horas encendido (CORREGIDO)
+    HOURS=$(echo "$SMART_INFO" | grep "Power On Hours:" | awk '{print $4}' | sed 's/,//g' | sed 's/\..*//' | sed 's/^0*//')
+    if [ -n "$HOURS" ] && [ "$HOURS" -gt 0 ] 2>/dev/null; then
+        DAYS=$((HOURS / 24))
+        echo "  ⏱️  Horas encendido: $HOURS horas (~${DAYS} días)"
+    fi
+    
+    # Datos leídos/escritos (CORREGIDO)
+    READ=$(echo "$SMART_INFO" | grep "Data Units Read:" | awk '{print $4}' | sed 's/,//g')
+    READ_UNIT=$(echo "$SMART_INFO" | grep "Data Units Read:" | awk '{print $5}')
+    WRITTEN=$(echo "$SMART_INFO" | grep "Data Units Written:" | awk '{print $4}' | sed 's/,//g')
+    WRITTEN_UNIT=$(echo "$SMART_INFO" | grep "Data Units Written:" | awk '{print $5}')
+    
+    if [ -n "$READ" ] && [ "$READ" -gt 0 ] 2>/dev/null; then
+        echo "  📖 Datos leídos: $READ $READ_UNIT"
+        echo "  📝 Datos escritos: $WRITTEN $WRITTEN_UNIT"
+    fi
+    
+    # Errores (CORREGIDO)
+    ERRORS=$(echo "$SMART_INFO" | grep "Media and Data Integrity Errors:" | awk '{print $4}' | sed 's/,//g')
+    if [ -n "$ERRORS" ] && [ "$ERRORS" -ge 0 ] 2>/dev/null; then
+        if [ "$ERRORS" -eq 0 ]; then
+            echo -e "  ✅ Errores de integridad: 0"
+        else
+            echo -e "  🔴 Errores de integridad: ${RED}$ERRORS${RESET}"
+        fi
+    fi
+    
+    # Apagados inseguros
+    UNSAFE=$(echo "$SMART_INFO" | grep "Unsafe Shutdowns:" | awk '{print $3}' | sed 's/,//g')
+    if [ -n "$UNSAFE" ] && [ "$UNSAFE" -ge 0 ] 2>/dev/null; then
+        if [ "$UNSAFE" -gt 10 ]; then
+            echo -e "  🔴 Apagados inseguros: ${YELLOW}$UNSAFE${RESET} ⚠️"
+        else
+            echo "  ✅ Apagados inseguros: $UNSAFE"
+        fi
+    fi
+    
+    # Resumen final
+    echo
+    echo -e "${BLUE}📋 Resumen:${RESET}"
+    
+    # Contar problemas
+    PROBLEMS=0
+    if [ -n "$TEMP" ] && [ "$TEMP" -gt 70 ] 2>/dev/null; then PROBLEMS=$((PROBLEMS+1)); fi
+    if [ -n "$PERCENT" ] && [ "$PERCENT" -gt 80 ] 2>/dev/null; then PROBLEMS=$((PROBLEMS+1)); fi
+    if [ -n "$ERRORS" ] && [ "$ERRORS" -gt 0 ] 2>/dev/null; then PROBLEMS=$((PROBLEMS+1)); fi
+    
+    if [ "$PROBLEMS" -eq 0 ]; then
+        echo -e "  ${GREEN}✅ NVMe en excelente estado${RESET}"
+    elif [ "$PROBLEMS" -lt 2 ]; then
+        echo -e "  ${YELLOW}⚠️  NVMe con algunos problemas (monitorear)${RESET}"
+    else
+        echo -e "  ${RED}❌ NVMe con problemas críticos - ¡Reemplazar pronto!${RESET}"
+    fi
+    
+    echo
+    separator
+    echo
+}
+# Función para analizar discos SATA/HDD
+analyze_sata() {
+    local DEVICE="$1"
+    
+    echo -e "${BOLD}${CYAN}📀 Disco: $(basename $DEVICE) (SATA)${RESET}"
+    separator
+    
+    # Obtener información básica
+    echo -e "${BLUE}📋 Información del disco:${RESET}"
+    sudo smartctl -i "$DEVICE" 2>/dev/null | grep -E "Model Family:|Device Model:|Serial Number:|Firmware Version:|User Capacity:|Rotation Rate:" | sed 's/^/  /'
+    echo
+    
+    # Obtener salud
+    echo -e "${BLUE}🏥 Salud SMART:${RESET}"
+    HEALTH=$(sudo smartctl -H "$DEVICE" 2>/dev/null | grep "SMART overall-health" | cut -d: -f2 | xargs)
+    if echo "$HEALTH" | grep -qi "PASSED"; then
+        echo -e "  ${GREEN}✅ $HEALTH${RESET}"
+    else
+        echo -e "  ${RED}❌ $HEALTH${RESET}"
+    fi
+    echo
+    
+    # Obtener atributos clave
+    echo -e "${BLUE}📊 Atributos clave:${RESET}"
+    
+    # Temperatura
+    TEMP=$(sudo smartctl -A "$DEVICE" 2>/dev/null | grep -E "Temperature_Celsius|Temperature" | head -1 | awk '{print $10}')
+    if [ -n "$TEMP" ]; then
+        echo -n "  🌡️  Temperatura: ${TEMP}°C"
+        if [ "$TEMP" -gt 70 ]; then
+            echo -e "  ${RED}🔥 CRÍTICA!${RESET}"
+        elif [ "$TEMP" -gt 60 ]; then
+            echo -e "  ${YELLOW}⚠️  Elevada${RESET}"
+        elif [ "$TEMP" -gt 50 ]; then
+            echo -e "  ${YELLOW}⚠️  Alta${RESET}"
+        else
+            echo -e "  ${GREEN}✅ Normal${RESET}"
+        fi
+    fi
+    
+    # Tiempo de encendido (CORREGIDO también)
+    POWER_ON=$(sudo smartctl -A "$DEVICE" 2>/dev/null | grep -E "Power_On_Hours|Power-On Hours" | awk '{print $10}' | sed 's/,//g' | sed 's/\..*//')
+    if [ -n "$POWER_ON" ] && [ "$POWER_ON" -gt 0 ] 2>/dev/null; then
+        DAYS=$((POWER_ON / 24))
+        echo "  ⏱️  Horas encendido: $POWER_ON horas (~${DAYS} días)"
+    fi
+    
+    # Sectores reasignados
+    REALLOC=$(sudo smartctl -A "$DEVICE" 2>/dev/null | grep "Reallocated_Sector" | awk '{print $10}')
+    if [ -n "$REALLOC" ]; then
+        if [ "$REALLOC" -gt 0 ]; then
+            echo -e "  🔴 Sectores reasignados: ${YELLOW}$REALLOC${RESET} ⚠️"
+        else
+            echo "  ✅ Sectores reasignados: 0"
+        fi
+    fi
+    
+    # Sectores pendientes
+    PENDING=$(sudo smartctl -A "$DEVICE" 2>/dev/null | grep "Current_Pending_Sector" | awk '{print $10}')
+    if [ -n "$PENDING" ]; then
+        if [ "$PENDING" -gt 0 ]; then
+            echo -e "  🔴 Sectores pendientes: ${RED}$PENDING${RESET} ⚠️"
+        else
+            echo "  ✅ Sectores pendientes: 0"
+        fi
+    fi
+    
+    # Resumen
+    echo
+    echo -e "${BLUE}📋 Resumen:${RESET}"
+    
+    PROBLEMS=0
+    if [ -n "$TEMP" ] && [ "$TEMP" -gt 70 ] 2>/dev/null; then PROBLEMS=$((PROBLEMS+1)); fi
+    if [ -n "$REALLOC" ] && [ "$REALLOC" -gt 0 ] 2>/dev/null; then PROBLEMS=$((PROBLEMS+1)); fi
+    if [ -n "$PENDING" ] && [ "$PENDING" -gt 0 ] 2>/dev/null; then PROBLEMS=$((PROBLEMS+1)); fi
+    
+    if [ "$PROBLEMS" -eq 0 ]; then
+        echo -e "  ${GREEN}✅ Disco en buen estado${RESET}"
+    elif [ "$PROBLEMS" -lt 2 ]; then
+        echo -e "  ${YELLOW}⚠️  Disco con algunos problemas (monitorear)${RESET}"
+    else
+        echo -e "  ${RED}❌ Disco con problemas críticos - ¡Reemplazar pronto!${RESET}"
+    fi
+    
+    echo
+    separator
+    echo
+}
+
+# ============================================================
+# MENÚ PRINCIPAL
+# ============================================================
+
+echo -e "${BLUE}🔍 Detectando discos...${RESET}"
+separator
+
+# Listar discos disponibles
+DISKS=()
+for DISK in $(lsblk -d -o NAME,TYPE | grep disk | awk '{print $1}' | grep -v "zram\|loop"); do
+    DISKS+=("$DISK")
+done
+
+if [ ${#DISKS[@]} -eq 0 ]; then
+    error "No se encontraron discos"
+    exit 1
+fi
+
+echo "Discos encontrados:"
+for i in "${!DISKS[@]}"; do
+    echo "  $((i+1))) ${DISKS[$i]}"
+done
+echo
+
+# Preguntar qué hacer
+echo -e "${BLUE}¿Qué deseas hacer?${RESET}"
+echo "  1) Analizar todos los discos"
+echo "  2) Seleccionar un disco específico"
+echo "  3) Salir"
+echo
+read -p "Opción (1-3): " OPCION
+
+case $OPCION in
+    1)
+        for DISK in "${DISKS[@]}"; do
+            DEVICE="/dev/$DISK"
+            if echo "$DISK" | grep -q "nvme"; then
+                analyze_nvme "$DEVICE"
+            else
+                analyze_sata "$DEVICE"
+            fi
+        done
+        ;;
+    2)
+        echo
+        read -p "Número de disco a analizar (1-${#DISKS[@]}): " NUM
+        if [ "$NUM" -ge 1 ] && [ "$NUM" -le ${#DISKS[@]} ]; then
+            DISK="${DISKS[$((NUM-1))]}"
+            DEVICE="/dev/$DISK"
+            if echo "$DISK" | grep -q "nvme"; then
+                analyze_nvme "$DEVICE"
+            else
+                analyze_sata "$DEVICE"
+            fi
+        else
+            error "Opción inválida"
+            exit 1
+        fi
+        ;;
+    3)
+        echo "Saliendo..."
+        exit 0
+        ;;
+    *)
+        error "Opción inválida"
+        exit 1
+        ;;
+esac
+
+echo
+ok "Diagnóstico SMART completado"
