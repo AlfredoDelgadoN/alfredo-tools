@@ -19,27 +19,124 @@ RESET='\033[0m'
 # ============================================================
 print_header() {
     clear
-    echo -e "${CYAN}${BOLD}╔════════════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${CYAN}${BOLD}║                    ALFREDO TOOLS v1.0                      ║${RESET}"
-    echo -e "${CYAN}${BOLD}║              Suite de Diagnóstico y Mantenimiento          ║${RESET}"
-    echo -e "${CYAN}${BOLD}╚════════════════════════════════════════════════════════════╝${RESET}"
+    echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════════════════════════════════╗${RESET}"
+    echo -e "${CYAN}${BOLD}║    ALFREDO TOOLS v1.0  /  Suite de Diagnóstico y Mantenimiento        ║${RESET}"
+    echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════════════════════════════════╝${RESET}"
     echo ""
 }
 
 print_category() {
     echo -e "${YELLOW}${BOLD}█▓▒░ $1 ░▒▓█${RESET}"
-    echo -e "${DIM}──────────────────────────────────────────────────────────────────${RESET}"
 }
 
-print_module() {
-    local name="$1"
-    local desc="$2"
-    printf "  ${GREEN}▶${RESET} ${BOLD}%-20s${RESET} ${DIM}%s${RESET}\n" "$name" "$desc"
+print_two_columns() {
+    local modules=("$@")
+    local half=$(( (${#modules[@]} + 1) / 2 ))
+    
+    for ((i=0; i<half; i++)); do
+        local idx1=$i
+        local idx2=$((i + half))
+        
+        # Primera columna
+        local name1=""
+        local desc1=""
+        if [ $idx1 -lt ${#modules[@]} ]; then
+            name1="${modules[$idx1]}"
+            desc1=$(get_description "$name1")
+        fi
+        
+        # Segunda columna
+        local name2=""
+        local desc2=""
+        if [ $idx2 -lt ${#modules[@]} ]; then
+            name2="${modules[$idx2]}"
+            desc2=$(get_description "$name2")
+        fi
+        
+        # Imprimir en dos columnas
+        if [ -n "$name1" ] && [ -n "$name2" ]; then
+            printf "  ${GREEN}▶${RESET} ${BOLD}%-18s${RESET} %-25s  ${GREEN}▶${RESET} ${BOLD}%-18s${RESET} %s\n" \
+                "$name1" "${desc1:0:25}" "$name2" "${desc2:0:25}"
+        elif [ -n "$name1" ]; then
+            printf "  ${GREEN}▶${RESET} ${BOLD}%-18s${RESET} %s\n" "$name1" "$desc1"
+        fi
+    done
+    echo ""
+}
+
+get_description() {
+    local module="$1"
+    local desc=""
+    
+    case "$module" in
+        # Diagnóstico
+        "diagnostico") desc=" Diagnóstico completo" ;;
+        "diagnostico-memoria") desc="Diagnóstico de memoria" ;;
+        "analizar-logs") desc=" Análisis de logs" ;;
+        "estado-actual") desc="Estado en tiempo real" ;;
+        "verificar-todo") desc="Verificación completa" ;;
+        
+        # Sistema
+        "salud") desc="Estado del sistema" ;;
+        "info ") desc="Resumen rápido" ;;
+        "procesador") desc="Información del CPU" ;;
+        "memoria") desc="Información de RAM" ;;
+        "discos") desc="Información de discos" ;;
+        "nvme-status") desc="Estado del NVMe" ;;
+        "tiempo-arranque") desc="Tiempo de arranque" ;;
+        "ultimo-arranque") desc="Último arranque" ;;
+        
+        # Reparación
+        "reparar") desc="Reparación automática" ;;
+        "reparar-todo") desc="Reparación completa" ;;
+        "fix-amd") desc="Solución para AMD" ;;
+        "fix-audio") desc="Solución de audio" ;;
+        "fix-pipewire") desc="Reparación PipeWire" ;;
+        "fix-pulse") desc="Reparación PulseAudio" ;;
+        "fix-hdmi") desc="Solución HDMI" ;;
+        "fix-screen") desc="Solución pantalla negra" ;;
+        "screen-fix-quick") desc="Solución rápida" ;;
+        "fix-speed") desc="Reparación speed test" ;;
+        
+        # Red
+        "red") desc="Configuración de red" ;;
+        "wifi") desc="Información WiFi" ;;
+        "speed") desc="Velocidad de Internet" ;;
+        
+        # Temperatura
+        "temp-cpu") desc="Temperatura CPU" ;;
+        "temp-discos") desc="Temperatura discos" ;;
+        "temp-discos-simple") desc="Temperatura simple" ;;
+        
+        # Audio
+        "check-audio") desc="Verificación de audio" ;;
+        "configurar-audio") desc="Configuración de audio" ;;
+        "monitor-audio") desc="Monitoreo de audio" ;;
+        "test-audio") desc="Prueba de audio" ;;
+        
+        # Pantallas
+        "setup-monitors") desc="Configurar monitores" ;;
+        "monitor-screen") desc="Monitoreo de pantallas" ;;
+        "pantalla-negra") desc="Soluciones pantalla negra" ;;
+        
+        # Optimización
+        "optimizar-arranque") desc="Optimizar arranque" ;;
+        "optimizar-memoria") desc="Optimizar memoria" ;;
+        "optimizar-soldada") desc="Optimizar soldada" ;;
+        
+        # Otros
+        "historial") desc="Historial de reparaciones" ;;
+        "resumen-ejecutivo") desc="Resumen ejecutivo" ;;
+        "mac-info") desc="Información MacBook" ;;
+        
+        *) desc="Sin descripción" ;;
+    esac
+    
+    echo "$desc"
 }
 
 print_footer() {
-    echo ""
-    echo -e "${DIM}──────────────────────────────────────────────────────────────────${RESET}"
+    echo -e "${DIM}───────────────────────────────────────────────────────────────────────────────${RESET}"
     echo -e "${CYAN}💡 Uso:${RESET} ${BOLD}alfredo <módulo>${RESET}  ${DIM}Ejemplo:${RESET} ${BOLD}alfredo salud${RESET}"
     echo -e "${CYAN}📖 Ayuda:${RESET} ${BOLD}alfredo help${RESET}  ${DIM}o${RESET} ${BOLD}alfredo --help${RESET}"
     echo ""
@@ -59,7 +156,7 @@ BASE="$(cd "$BIN_DIR/.." && pwd)"
 export ALFREDO_BASE="$BASE"
 
 # ============================================================
-# MENÚ PRINCIPAL
+# MENÚ PRINCIPAL CON DOS COLUMNAS
 # ============================================================
 show_menu() {
     print_header
@@ -68,97 +165,79 @@ show_menu() {
     # CATEGORÍA: DIAGNÓSTICO
     # ============================================================
     print_category "🔍 DIAGNÓSTICO"
-    print_module "diagnostico" "Diagnóstico completo del sistema"
-    print_module "diagnostico-memoria" "Diagnóstico de memoria RAM"
-    print_module "analizar-logs" "Análisis de logs del sistema"
-    print_module "estado-actual" "Estado del sistema en tiempo real"
-    print_module "verificar-todo" "Verificación completa del sistema"
-    echo ""
+    print_two_columns \
+        "diagnostico" "diagnostico-memoria" \
+        "analizar-logs" "estado-actual" \
+        "verificar-todo"
     
     # ============================================================
     # CATEGORÍA: SISTEMA
     # ============================================================
     print_category "💻 SISTEMA"
-    print_module "salud" "Estado completo del sistema"
-    print_module "info" "Resumen rápido del sistema"
-    print_module "procesador" "Información del procesador"
-    print_module "memoria" "Información de la memoria RAM"
-    print_module "discos" "Información de discos y almacenamiento"
-    print_module "nvme-status" "Estado del disco NVMe"
-    print_module "tiempo-arranque" "Tiempo de arranque del sistema"
-    print_module "ultimo-arranque" "Información del último arranque"
-    echo ""
+    print_two_columns \
+        "salud" "info" \
+        "procesador" "memoria" \
+        "discos" "nvme-status" \
+        "tiempo-arranque" "ultimo-arranque"
     
     # ============================================================
     # CATEGORÍA: REPARACIÓN
     # ============================================================
     print_category "🔧 REPARACIÓN"
-    print_module "reparar" "Reparación automática de problemas"
-    print_module "reparar-todo" "Reparación completa del sistema"
-    print_module "fix-amd" "Solución específica para AMD"
-    print_module "fix-audio" "Solución de problemas de audio"
-    print_module "fix-pipewire" "Reparación completa de PipeWire"
-    print_module "fix-pulse" "Reparación de conexión PulseAudio"
-    print_module "fix-hdmi" "Solución de problemas HDMI"
-    print_module "fix-screen" "Solución de pantalla negra"
-    print_module "screen-fix-quick" "Solución rápida de pantalla negra"
-    print_module "fix-speed" "Reparación de speed test"
-    echo ""
+    print_two_columns \
+        "reparar" "reparar-todo" \
+        "fix-amd" "fix-audio" \
+        "fix-pipewire" "fix-pulse" \
+        "fix-hdmi" "fix-screen" \
+        "screen-fix-quick" "fix-speed"
     
     # ============================================================
     # CATEGORÍA: RED Y CONECTIVIDAD
     # ============================================================
     print_category "🌐 RED Y CONECTIVIDAD"
-    print_module "red" "Información de configuración de red"
-    print_module "wifi" "Información de conexión WiFi"
-    print_module "speed" "Prueba de velocidad de Internet"
-    echo ""
+    print_two_columns \
+        "red" "wifi" \
+        "speed"
     
     # ============================================================
     # CATEGORÍA: TEMPERATURA
     # ============================================================
     print_category "🌡️  TEMPERATURA"
-    print_module "temp-cpu" "Monitoreo de temperatura de CPU"
-    print_module "temp-discos" "Monitoreo de temperatura de discos"
-    print_module "temp-discos-simple" "Temperatura de discos (versión simple)"
-    echo ""
+    print_two_columns \
+        "temp-cpu" "temp-discos" \
+        "temp-discos-simple"
     
     # ============================================================
     # CATEGORÍA: AUDIO
     # ============================================================
     print_category "🔊 AUDIO"
-    print_module "check-audio" "Verificación rápida de audio"
-    print_module "configurar-audio" "Configuración de audio"
-    print_module "monitor-audio" "Monitoreo de audio en tiempo real"
-    print_module "test-audio" "Prueba de audio"
-    echo ""
+    print_two_columns \
+        "check-audio" "configurar-audio" \
+        "monitor-audio" "test-audio"
     
     # ============================================================
     # CATEGORÍA: PANTALLAS Y GRÁFICOS
     # ============================================================
     print_category "🖥️  PANTALLAS Y GRÁFICOS"
-    print_module "setup-monitors" "Configuración de monitores"
-    print_module "monitor-screen" "Monitoreo de cambios en pantallas"
-    print_module "pantalla-negra" "Soluciones para pantalla negra"
-    echo ""
+    print_two_columns \
+        "setup-monitors" "monitor-screen" \
+        "pantalla-negra"
     
     # ============================================================
     # CATEGORÍA: OPTIMIZACIÓN
     # ============================================================
     print_category "🚀 OPTIMIZACIÓN"
-    print_module "optimizar-arranque" "Optimización del tiempo de arranque"
-    print_module "optimizar-memoria" "Optimización de memoria"
-    print_module "optimizar-soldada" "Optimización para memoria soldada"
-    echo ""
+    print_two_columns \
+        "optimizar-arranque" "optimizar-memoria" \
+        "optimizar-soldada"
     
     # ============================================================
     # CATEGORÍA: OTROS
     # ============================================================
     print_category "📊 OTROS"
-    print_module "historial" "Historial de reparaciones"
-    print_module "resumen-ejecutivo" "Resumen ejecutivo del sistema"
-    print_module "mac-info" "Información de MacBook"
-    echo ""
+    print_two_columns \
+        "historial" "resumen-ejecutivo" \
+        "mac-info"
     
     print_footer
 }
