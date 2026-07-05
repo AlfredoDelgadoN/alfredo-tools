@@ -74,14 +74,14 @@ analyze_nvme() {
         fi
     fi
     
-    # Horas encendido (CORREGIDO)
-    HOURS=$(echo "$SMART_INFO" | grep "Power On Hours:" | awk '{print $4}' | sed 's/,//g' | sed 's/\..*//' | sed 's/^0*//')
+    # Horas encendido (CORREGIDO DEFINITIVO)
+    HOURS=$(echo "$SMART_INFO" | grep "Power On Hours:" | awk '{print $4}' | sed 's/,//g' | sed 's/\.//g' | sed 's/[^0-9]//g')
     if [ -n "$HOURS" ] && [ "$HOURS" -gt 0 ] 2>/dev/null; then
         DAYS=$((HOURS / 24))
         echo "  ⏱️  Horas encendido: $HOURS horas (~${DAYS} días)"
     fi
     
-    # Datos leídos/escritos (CORREGIDO)
+    # Datos leídos/escritos
     READ=$(echo "$SMART_INFO" | grep "Data Units Read:" | awk '{print $4}' | sed 's/,//g')
     READ_UNIT=$(echo "$SMART_INFO" | grep "Data Units Read:" | awk '{print $5}')
     WRITTEN=$(echo "$SMART_INFO" | grep "Data Units Written:" | awk '{print $4}' | sed 's/,//g')
@@ -92,7 +92,7 @@ analyze_nvme() {
         echo "  📝 Datos escritos: $WRITTEN $WRITTEN_UNIT"
     fi
     
-    # Errores (CORREGIDO)
+    # Errores
     ERRORS=$(echo "$SMART_INFO" | grep "Media and Data Integrity Errors:" | awk '{print $4}' | sed 's/,//g')
     if [ -n "$ERRORS" ] && [ "$ERRORS" -ge 0 ] 2>/dev/null; then
         if [ "$ERRORS" -eq 0 ]; then
@@ -134,6 +134,7 @@ analyze_nvme() {
     separator
     echo
 }
+
 # Función para analizar discos SATA/HDD
 analyze_sata() {
     local DEVICE="$1"
@@ -174,8 +175,9 @@ analyze_sata() {
         fi
     fi
     
-    # Tiempo de encendido (CORREGIDO también)
-    POWER_ON=$(sudo smartctl -A "$DEVICE" 2>/dev/null | grep -E "Power_On_Hours|Power-On Hours" | awk '{print $10}' | sed 's/,//g' | sed 's/\..*//')
+    # Tiempo de encendido (CORREGIDO)
+    POWER_ON_RAW=$(sudo smartctl -A "$DEVICE" 2>/dev/null | grep -E "Power_On_Hours|Power-On Hours" | awk '{print $10}')
+    POWER_ON=$(echo "$POWER_ON_RAW" | sed 's/,//g' | sed 's/\..*//' | sed 's/^0*//' | sed 's/[^0-9]//g')
     if [ -n "$POWER_ON" ] && [ "$POWER_ON" -gt 0 ] 2>/dev/null; then
         DAYS=$((POWER_ON / 24))
         echo "  ⏱️  Horas encendido: $POWER_ON horas (~${DAYS} días)"
