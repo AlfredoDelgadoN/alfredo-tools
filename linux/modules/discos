@@ -189,50 +189,39 @@ for DISK in $(lsblk -d -o NAME,TYPE | grep disk | awk '{print $1}' | grep -v "zr
     echo -e "${BOLD}${CYAN}📀 Disco: $DISK${RESET}"
     separator
     
-    # Tipo de disco
-    if [ -f "/sys/block/$DISK/queue/rotational" ]; then
-        ROTA=$(cat "/sys/block/$DISK/queue/rotational" 2>/dev/null)
-        if [ "$ROTA" = "0" ]; then
-            if echo "$DISK" | grep -q "nvme"; then
-                echo "  Tipo: NVMe ⚡ (Unidad de Estado Sólido PCIe)"
-                # Información detallada para NVMe
-                get_nvme_info "$DEVICE"
-            else
-                echo "  Tipo: SSD ⚡ (Unidad de Estado Sólido)"
-                # Información básica para SSD SATA
-                SIZE=$(lsblk -d -o SIZE "$DEVICE" 2>/dev/null | tail -1)
-                echo "  Tamaño: $SIZE"
-                MODEL=$(lsblk -d -o MODEL "$DEVICE" 2>/dev/null | tail -1)
-                if [ -n "$MODEL" ] && [ "$MODEL" != "-" ]; then
-                    echo "  Modelo: $MODEL"
-                fi
-            fi
-        elif [ "$ROTA" = "1" ]; then
-            echo "  Tipo: HDD 💾 (Disco Mecánico)"
-            # Información básica para HDD
-            SIZE=$(lsblk -d -o SIZE "$DEVICE" 2>/dev/null | tail -1)
-            echo "  Tamaño: $SIZE"
-            MODEL=$(lsblk -d -o MODEL "$DEVICE" 2>/dev/null | tail -1)
-            if [ -n "$MODEL" ] && [ "$MODEL" != "-" ]; then
-                echo "  Modelo: $MODEL"
-            fi
-            # Velocidad de rotación
-            if command -v hdparm &>/dev/null; then
-                RPM=$(sudo hdparm -I "$DEVICE" 2>/dev/null | grep "Rotation Rate" | awk '{print $3}')
-                if [ -n "$RPM" ]; then
-                    echo "  Velocidad: $RPM RPM"
-                fi
-            fi
-        fi
-    fi
-    
-    # Particiones (solo si no es zram)
-    if [ "$DISK" != "zram0" ]; then
-        echo "  Particiones:"
-        lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINT "$DEVICE" 2>/dev/null | grep -v "NAME" | while read line; do
-            echo "    $line"
-        done
-    fi
+	# Determinar tipo de disco (mejorado para todos los casos)
+	if [ -f "/sys/block/$DISK/queue/rotational" ]; then
+    	ROTA=$(cat "/sys/block/$DISK/queue/rotational" 2>/dev/null)
+    	if [ "$ROTA" = "0" ]; then
+        	# SSD o NVMe
+        	if echo "$DISK" | grep -q "nvme"; then
+            	TIPO="NVMe ⚡"
+        	elif echo "$MODEL" | grep -qi "SSD"; then
+            	TIPO="SSD ⚡"
+        	else
+            	TIPO="SSD ⚡"
+        	fi
+    	elif [ "$ROTA" = "1" ]; then
+        	TIPO="HDD 💾"
+    	else
+        	# Fallback: verificar modelo
+        	if echo "$MODEL" | grep -qi "SSD"; then
+            	TIPO="SSD ⚡"
+        	elif echo "$MODEL" | grep -qi "HDD"; then
+            	TIPO="HDD 💾"
+        	else
+            	TIPO="Desconocido"
+        	fi
+    	fi
+	fi
+    	
+    	# Particiones (solo si no es zram)
+    	if [ "$DISK" != "zram0" ]; then
+        	echo "  Particiones:"
+        	lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINT "$DEVICE" 2>/dev/null | grep -v "NAME" | while read line; do
+            	echo "    $line"
+        	done
+    	fi
 done
 
 # ============================================

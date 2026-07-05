@@ -15,55 +15,102 @@ if command -v dmidecode &>/dev/null; then
     if [ -n "$MODEL" ]; then
         echo "  $MODEL"
     else
-        echo "  MacBook detectado (2010)"
+        # Fallback: buscar en /sys
+        if [ -f /sys/class/dmi/id/product_name ]; then
+            echo "  $(cat /sys/class/dmi/id/product_name)"
+        fi
     fi
 fi
+echo
 
 # 2. GPU
-echo
 echo "2️⃣ GPU:"
-GPU=$(lspci | grep -i "vga\|3d" | cut -d: -f3 | xargs)
-if echo "$GPU" | grep -qi "nvidia"; then
-    echo "  ${GREEN}✅ $GPU${NC}"
-    echo "  ℹ️  Driver: $(lsmod | grep -q nvidia && echo "NVIDIA (propietario)" || echo "nouveau (open-source)")"
+if command -v lspci &>/dev/null; then
+    GPU=$(lspci | grep -i "vga\|3d" | cut -d: -f3 | xargs)
+    if echo "$GPU" | grep -qi "nvidia"; then
+        echo -e "  ${GREEN}✅ NVIDIA: $GPU${NC}"
+        echo "  ℹ️  Driver: $(lsmod | grep -q nvidia && echo "NVIDIA (propietario)" || echo "nouveau (open-source)")"
+    elif echo "$GPU" | grep -qi "amd\|ati"; then
+        echo -e "  ${GREEN}✅ AMD: $GPU${NC}"
+    elif echo "$GPU" | grep -qi "intel"; then
+        echo -e "  ${GREEN}✅ Intel: $GPU${NC}"
+    else
+        echo "  $GPU"
+    fi
 fi
+echo
 
 # 3. Temperatura
-echo
 echo "3️⃣ Temperaturas:"
 if command -v sensors &>/dev/null; then
-    sensors | grep -E "Core|CPU|Temp" | head -5
+    sensors 2>/dev/null | grep -E "Core|CPU|Package" | head -5
 else
     echo "  ℹ️ Instala: sudo apt install lm-sensors"
 fi
-
-# 4. Batería (si existe)
 echo
+
+# 4. Batería
 echo "4️⃣ Batería:"
 if [ -d /sys/class/power_supply/BAT0 ]; then
     BATTERY=$(cat /sys/class/power_supply/BAT0/capacity 2>/dev/null)
     if [ -n "$BATTERY" ]; then
-        echo "  🔋 Capacidad: ${BATTERY}%"
-        STATUS=$(cat /sys/class/power_supply/BAT0/status 2>/dev/null)
-        echo "  ⚡ Estado: $STATUS"
+        echo -n "  🔋 Capacidad: ${BATTERY}%"
+        if [ "$BATTERY" -lt 20 ]; then
+            echo -e "  ${RED}⚠️  Crítica!${RESET}"
+        elif [ "$BATTERY" -lt 50 ]; then
+            echo -e "  ${YELLOW}⚠️  Baja${RESET}"
+        else
+            echo -e "  ${GREEN}✅ Normal${RESET}"
+        fi
     fi
+    STATUS=$(cat /sys/class/power_supply/BAT0/status 2>/dev/null)
+    echo "  ⚡ Estado: $STATUS"
 else
     echo "  ℹ️ No se detectó batería"
 fi
 
-# 5. Recomendaciones
+# 5. Disco
 echo
-echo -e "${BLUE}💡 RECOMENDACIONES PARA MACBOOK 2010${RESET}"
+echo "5️⃣ Disco:"
+if command -v lsblk &>/dev/null; then
+    lsblk -d -o NAME,SIZE,MODEL,ROTA 2>/dev/null | grep -v "loop" | while read line; do
+        echo "  $line"
+    done
+fi
+
+# 6. SSD/HDD
+echo
+echo "6️⃣ Tipo de almacenamiento:"
+if [ -f /sys/block/sda/queue/rotational ]; then
+    ROTA=$(cat /sys/block/sda/queue/rotational 2>/dev/null)
+    if [ "$ROTA" = "0" ]; then
+        echo -e "  ${GREEN}✅ SSD detectado${RESET}"
+    elif [ "$ROTA" = "1" ]; then
+        echo -e "  ${YELLOW}⚠️  HDD detectado - Considera actualizar a SSD${RESET}"
+    fi
+fi
+
+# 7. Recomendaciones
+echo
+echo -e "${BLUE}💡 RECOMENDACIONES PARA MACBOOK${RESET}"
 separator
 
-echo "  📌 Para mejorar el rendimiento:"
-echo "     • Usa SSD (si aún tiene HDD)"
-echo "     • Desactiva efectos visuales:"
-echo "       xfwm4 --replace & (si usas Xfce)"
-echo "     • Usa Linux Mint 22.04 (como ya haces)"
-echo
-echo "  🔧 Si usas WiFi:"
-echo "     • Ejecuta: alfredo wifi"
-echo "     • Verifica drivers: lspci | grep -i network"
+# Verificar si es MacBook Pro 2010
+if echo "$MODEL" | grep -q "MacBookPro7,1"; then
+    echo "  📌 Modelo: MacBook Pro 2010"
+    echo "     • Sistema: Linux Mint 22.04 ✅"
+    if [ "$ROTA" = "0" ]; then
+        echo "     • SSD: ✅ Ya tiene SSD - Excelente"
+    else
+        echo "     • ⚠️  HDD: Considera actualizar a SSD"
+    fi
+    echo "     • GPU: NVIDIA GeForce 320M con nouveau"
+    echo "     • Batería: ${BATTERY}% ($STATUS)"
+    echo
+    echo "  🔧 Para mejorar el rendimiento:"
+    echo "     • Usa Linux Mint 22.04 (ya lo tienes) ✅"
+    echo "     • Desactiva efectos visuales si es necesario"
+    echo "     • Monitorea temperatura: alfredo temp-cpu"
+fi
 
 ok "Información de MacBook completada"

@@ -135,7 +135,7 @@ analyze_nvme() {
     echo
 }
 
-# Función para analizar discos SATA/HDD
+# Función para analizar discos SATA/HDD (mejorada)
 analyze_sata() {
     local DEVICE="$1"
     
@@ -144,7 +144,7 @@ analyze_sata() {
     
     # Obtener información básica
     echo -e "${BLUE}📋 Información del disco:${RESET}"
-    sudo smartctl -i "$DEVICE" 2>/dev/null | grep -E "Model Family:|Device Model:|Serial Number:|Firmware Version:|User Capacity:|Rotation Rate:" | sed 's/^/  /'
+    sudo smartctl -i "$DEVICE" 2>/dev/null | grep -E "Model Family:|Device Model:|Serial Number:|Firmware Version:|User Capacity:|Rotation Rate:|Form Factor:|SATA Version:" | sed 's/^/  /'
     echo
     
     # Obtener salud
@@ -160,8 +160,11 @@ analyze_sata() {
     # Obtener atributos clave
     echo -e "${BLUE}📊 Atributos clave:${RESET}"
     
+    # Leer información SMART
+    SMART_INFO=$(sudo smartctl -A "$DEVICE" 2>/dev/null)
+    
     # Temperatura
-    TEMP=$(sudo smartctl -A "$DEVICE" 2>/dev/null | grep -E "Temperature_Celsius|Temperature" | head -1 | awk '{print $10}')
+    TEMP=$(echo "$SMART_INFO" | grep -E "Temperature_Celsius|Airflow_Temperature" | head -1 | awk '{print $10}')
     if [ -n "$TEMP" ]; then
         echo -n "  🌡️  Temperatura: ${TEMP}°C"
         if [ "$TEMP" -gt 70 ]; then
@@ -175,16 +178,15 @@ analyze_sata() {
         fi
     fi
     
-    # Tiempo de encendido (CORREGIDO)
-    POWER_ON_RAW=$(sudo smartctl -A "$DEVICE" 2>/dev/null | grep -E "Power_On_Hours|Power-On Hours" | awk '{print $10}')
-    POWER_ON=$(echo "$POWER_ON_RAW" | sed 's/,//g' | sed 's/\..*//' | sed 's/^0*//' | sed 's/[^0-9]//g')
-    if [ -n "$POWER_ON" ] && [ "$POWER_ON" -gt 0 ] 2>/dev/null; then
+    # Tiempo de encendido
+    POWER_ON=$(echo "$SMART_INFO" | grep -E "Power_On_Hours" | awk '{print $10}')
+    if [ -n "$POWER_ON" ]; then
         DAYS=$((POWER_ON / 24))
         echo "  ⏱️  Horas encendido: $POWER_ON horas (~${DAYS} días)"
     fi
     
     # Sectores reasignados
-    REALLOC=$(sudo smartctl -A "$DEVICE" 2>/dev/null | grep "Reallocated_Sector" | awk '{print $10}')
+    REALLOC=$(echo "$SMART_INFO" | grep "Reallocated_Sector" | awk '{print $10}')
     if [ -n "$REALLOC" ]; then
         if [ "$REALLOC" -gt 0 ]; then
             echo -e "  🔴 Sectores reasignados: ${YELLOW}$REALLOC${RESET} ⚠️"
@@ -193,13 +195,25 @@ analyze_sata() {
         fi
     fi
     
-    # Sectores pendientes
-    PENDING=$(sudo smartctl -A "$DEVICE" 2>/dev/null | grep "Current_Pending_Sector" | awk '{print $10}')
-    if [ -n "$PENDING" ]; then
-        if [ "$PENDING" -gt 0 ]; then
-            echo -e "  🔴 Sectores pendientes: ${RED}$PENDING${RESET} ⚠️"
+    # Wear Leveling (para SSD Samsung)
+    WEAR=$(echo "$SMART_INFO" | grep "Wear_Leveling_Count" | awk '{print $10}')
+    if [ -n "$WEAR" ]; then
+        if [ "$WEAR" -gt 80 ]; then
+            echo -e "  🔴 Desgaste: ${RED}$WEAR%${RESET} ⚠️"
+        elif [ "$WEAR" -gt 50 ]; then
+            echo -e "  🟡 Desgaste: ${YELLOW}$WEAR%${RESET}"
         else
-            echo "  ✅ Sectores pendientes: 0"
+            echo -e "  ✅ Desgaste: ${GREEN}$WEAR%${RESET}"
+        fi
+    fi
+    
+    # Errores
+    ERRORS=$(echo "$SMART_INFO" | grep "Uncorrectable_Error" | awk '{print $10}')
+    if [ -n "$ERRORS" ]; then
+        if [ "$ERRORS" -eq 0 ]; then
+            echo -e "  ✅ Errores no corregibles: 0"
+        else
+            echo -e "  🔴 Errores no corregibles: ${RED}$ERRORS${RESET}"
         fi
     fi
     
@@ -210,10 +224,10 @@ analyze_sata() {
     PROBLEMS=0
     if [ -n "$TEMP" ] && [ "$TEMP" -gt 70 ] 2>/dev/null; then PROBLEMS=$((PROBLEMS+1)); fi
     if [ -n "$REALLOC" ] && [ "$REALLOC" -gt 0 ] 2>/dev/null; then PROBLEMS=$((PROBLEMS+1)); fi
-    if [ -n "$PENDING" ] && [ "$PENDING" -gt 0 ] 2>/dev/null; then PROBLEMS=$((PROBLEMS+1)); fi
+    if [ -n "$WEAR" ] && [ "$WEAR" -gt 80 ] 2>/dev/null; then PROBLEMS=$((PROBLEMS+1)); fi
     
     if [ "$PROBLEMS" -eq 0 ]; then
-        echo -e "  ${GREEN}✅ Disco en buen estado${RESET}"
+        echo -e "  ${GREEN}✅ Disco en excelente estado${RESET}"
     elif [ "$PROBLEMS" -lt 2 ]; then
         echo -e "  ${YELLOW}⚠️  Disco con algunos problemas (monitorear)${RESET}"
     else
