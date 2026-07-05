@@ -19,16 +19,17 @@ fi
 # Función para analizar NVMe
 analyze_nvme() {
     local DEVICE="$1"
+    local SMART_INFO=$(sudo smartctl -A "$DEVICE" 2>/dev/null)
     
     echo -e "${BOLD}${CYAN}📀 Disco: $(basename $DEVICE) (NVMe)${RESET}"
     separator
     
-    # Obtener información básica
+    # Información básica
     echo -e "${BLUE}📋 Información del disco:${RESET}"
     sudo smartctl -i "$DEVICE" 2>/dev/null | grep -E "Model Number:|Serial Number:|Firmware Version:|NVMe Version:|Total NVM Capacity:" | sed 's/^/  /'
     echo
     
-    # Obtener salud
+    # Salud
     echo -e "${BLUE}🏥 Salud SMART:${RESET}"
     HEALTH=$(sudo smartctl -H "$DEVICE" 2>/dev/null | grep "SMART overall-health" | cut -d: -f2 | xargs)
     if echo "$HEALTH" | grep -qi "PASSED"; then
@@ -38,25 +39,17 @@ analyze_nvme() {
     fi
     echo
     
-    # Obtener atributos NVMe
+    # Atributos NVMe
     echo -e "${BLUE}📊 Atributos NVMe:${RESET}"
-    
-    # Leer toda la información SMART de una vez
-    SMART_INFO=$(sudo smartctl -A "$DEVICE" 2>/dev/null)
     
     # Temperatura
     TEMP=$(echo "$SMART_INFO" | grep -E "^Temperature:" | awk '{print $2}' | sed 's/°C//')
     if [ -n "$TEMP" ] && [ "$TEMP" -gt 0 ] 2>/dev/null; then
         echo -n "  🌡️  Temperatura: ${TEMP}°C"
-        if [ "$TEMP" -gt 70 ]; then
-            echo -e "  ${RED}🔥 CRÍTICA!${RESET}"
-        elif [ "$TEMP" -gt 60 ]; then
-            echo -e "  ${YELLOW}⚠️  Elevada${RESET}"
-        elif [ "$TEMP" -gt 50 ]; then
-            echo -e "  ${YELLOW}⚠️  Alta${RESET}"
-        else
-            echo -e "  ${GREEN}✅ Normal${RESET}"
-        fi
+        [ "$TEMP" -gt 70 ] && echo -e "  ${RED}🔥 CRÍTICA!${RESET}" || \
+        [ "$TEMP" -gt 60 ] && echo -e "  ${YELLOW}⚠️  Elevada${RESET}" || \
+        [ "$TEMP" -gt 50 ] && echo -e "  ${YELLOW}⚠️  Alta${RESET}" || \
+        echo -e "  ${GREEN}✅ Normal${RESET}"
     fi
     
     # Porcentaje usado
@@ -64,17 +57,12 @@ analyze_nvme() {
     if [ -n "$PERCENT" ] && [ "$PERCENT" -gt 0 ] 2>/dev/null; then
         REMAINING=$((100 - PERCENT))
         echo -e "  📊 Vida útil estimada: ${GREEN}$REMAINING%${RESET} restante"
-        
-        if [ "$PERCENT" -gt 80 ]; then
-            echo -e "     ${RED}⚠️  Desgaste alto! Considera reemplazar el disco${RESET}"
-        elif [ "$PERCENT" -gt 50 ]; then
-            echo -e "     ${YELLOW}⚠️  Desgaste moderado${RESET}"
-        else
-            echo -e "     ${GREEN}✅ Desgaste bajo${RESET}"
-        fi
+        [ "$PERCENT" -gt 80 ] && echo -e "     ${RED}⚠️  Desgaste alto! Considera reemplazar el disco${RESET}" || \
+        [ "$PERCENT" -gt 50 ] && echo -e "     ${YELLOW}⚠️  Desgaste moderado${RESET}" || \
+        echo -e "     ${GREEN}✅ Desgaste bajo${RESET}"
     fi
     
-    # Horas encendido (CORREGIDO DEFINITIVO)
+    # Horas encendido
     HOURS=$(echo "$SMART_INFO" | grep "Power On Hours:" | awk '{print $4}' | sed 's/,//g' | sed 's/\.//g' | sed 's/[^0-9]//g')
     if [ -n "$HOURS" ] && [ "$HOURS" -gt 0 ] 2>/dev/null; then
         DAYS=$((HOURS / 24))
@@ -86,20 +74,13 @@ analyze_nvme() {
     READ_UNIT=$(echo "$SMART_INFO" | grep "Data Units Read:" | awk '{print $5}')
     WRITTEN=$(echo "$SMART_INFO" | grep "Data Units Written:" | awk '{print $4}' | sed 's/,//g')
     WRITTEN_UNIT=$(echo "$SMART_INFO" | grep "Data Units Written:" | awk '{print $5}')
-    
-    if [ -n "$READ" ] && [ "$READ" -gt 0 ] 2>/dev/null; then
-        echo "  📖 Datos leídos: $READ $READ_UNIT"
-        echo "  📝 Datos escritos: $WRITTEN $WRITTEN_UNIT"
-    fi
+    [ -n "$READ" ] && [ "$READ" -gt 0 ] 2>/dev/null && echo "  📖 Datos leídos: $READ $READ_UNIT"
+    [ -n "$WRITTEN" ] && [ "$WRITTEN" -gt 0 ] 2>/dev/null && echo "  📝 Datos escritos: $WRITTEN $WRITTEN_UNIT"
     
     # Errores
     ERRORS=$(echo "$SMART_INFO" | grep "Media and Data Integrity Errors:" | awk '{print $4}' | sed 's/,//g')
     if [ -n "$ERRORS" ] && [ "$ERRORS" -ge 0 ] 2>/dev/null; then
-        if [ "$ERRORS" -eq 0 ]; then
-            echo -e "  ✅ Errores de integridad: 0"
-        else
-            echo -e "  🔴 Errores de integridad: ${RED}$ERRORS${RESET}"
-        fi
+        [ "$ERRORS" -eq 0 ] && echo -e "  ✅ Errores de integridad: 0" || echo -e "  🔴 Errores de integridad: ${RED}$ERRORS${RESET}"
     fi
     
     # Apagados inseguros
@@ -112,15 +93,13 @@ analyze_nvme() {
         fi
     fi
     
-    # Resumen final
+    # Resumen
     echo
     echo -e "${BLUE}📋 Resumen:${RESET}"
-    
-    # Contar problemas
     PROBLEMS=0
-    if [ -n "$TEMP" ] && [ "$TEMP" -gt 70 ] 2>/dev/null; then PROBLEMS=$((PROBLEMS+1)); fi
-    if [ -n "$PERCENT" ] && [ "$PERCENT" -gt 80 ] 2>/dev/null; then PROBLEMS=$((PROBLEMS+1)); fi
-    if [ -n "$ERRORS" ] && [ "$ERRORS" -gt 0 ] 2>/dev/null; then PROBLEMS=$((PROBLEMS+1)); fi
+    [ -n "$TEMP" ] && [ "$TEMP" -gt 70 ] 2>/dev/null && PROBLEMS=$((PROBLEMS+1))
+    [ -n "$PERCENT" ] && [ "$PERCENT" -gt 80 ] 2>/dev/null && PROBLEMS=$((PROBLEMS+1))
+    [ -n "$ERRORS" ] && [ "$ERRORS" -gt 0 ] 2>/dev/null && PROBLEMS=$((PROBLEMS+1))
     
     if [ "$PROBLEMS" -eq 0 ]; then
         echo -e "  ${GREEN}✅ NVMe en excelente estado${RESET}"
@@ -129,25 +108,23 @@ analyze_nvme() {
     else
         echo -e "  ${RED}❌ NVMe con problemas críticos - ¡Reemplazar pronto!${RESET}"
     fi
-    
-    echo
-    separator
     echo
 }
 
-# Función para analizar discos SATA/HDD (mejorada)
+# Función para analizar SATA SSD/HDD
 analyze_sata() {
     local DEVICE="$1"
+    local SMART_INFO=$(sudo smartctl -A "$DEVICE" 2>/dev/null)
     
     echo -e "${BOLD}${CYAN}📀 Disco: $(basename $DEVICE) (SATA)${RESET}"
     separator
     
-    # Obtener información básica
+    # Información básica
     echo -e "${BLUE}📋 Información del disco:${RESET}"
     sudo smartctl -i "$DEVICE" 2>/dev/null | grep -E "Model Family:|Device Model:|Serial Number:|Firmware Version:|User Capacity:|Rotation Rate:|Form Factor:|SATA Version:" | sed 's/^/  /'
     echo
     
-    # Obtener salud
+    # Salud
     echo -e "${BLUE}🏥 Salud SMART:${RESET}"
     HEALTH=$(sudo smartctl -H "$DEVICE" 2>/dev/null | grep "SMART overall-health" | cut -d: -f2 | xargs)
     if echo "$HEALTH" | grep -qi "PASSED"; then
@@ -157,35 +134,27 @@ analyze_sata() {
     fi
     echo
     
-    # Obtener atributos clave
-    echo -e "${BLUE}📊 Atributos clave:${RESET}"
-    
-    # Leer información SMART
-    SMART_INFO=$(sudo smartctl -A "$DEVICE" 2>/dev/null)
+    # Atributos SATA
+    echo -e "${BLUE}📊 Atributos SMART:${RESET}"
     
     # Temperatura
     TEMP=$(echo "$SMART_INFO" | grep -E "Temperature_Celsius|Airflow_Temperature" | head -1 | awk '{print $10}')
     if [ -n "$TEMP" ]; then
         echo -n "  🌡️  Temperatura: ${TEMP}°C"
-        if [ "$TEMP" -gt 70 ]; then
-            echo -e "  ${RED}🔥 CRÍTICA!${RESET}"
-        elif [ "$TEMP" -gt 60 ]; then
-            echo -e "  ${YELLOW}⚠️  Elevada${RESET}"
-        elif [ "$TEMP" -gt 50 ]; then
-            echo -e "  ${YELLOW}⚠️  Alta${RESET}"
-        else
-            echo -e "  ${GREEN}✅ Normal${RESET}"
-        fi
+        [ "$TEMP" -gt 70 ] && echo -e "  ${RED}🔥 CRÍTICA!${RESET}" || \
+        [ "$TEMP" -gt 60 ] && echo -e "  ${YELLOW}⚠️  Elevada${RESET}" || \
+        [ "$TEMP" -gt 50 ] && echo -e "  ${YELLOW}⚠️  Alta${RESET}" || \
+        echo -e "  ${GREEN}✅ Normal${RESET}"
     fi
     
-    # Tiempo de encendido
+    # Horas encendido
     POWER_ON=$(echo "$SMART_INFO" | grep -E "Power_On_Hours" | awk '{print $10}')
     if [ -n "$POWER_ON" ]; then
         DAYS=$((POWER_ON / 24))
         echo "  ⏱️  Horas encendido: $POWER_ON horas (~${DAYS} días)"
     fi
     
-    # Sectores reasignados
+    # Sector reasignados
     REALLOC=$(echo "$SMART_INFO" | grep "Reallocated_Sector" | awk '{print $10}')
     if [ -n "$REALLOC" ]; then
         if [ "$REALLOC" -gt 0 ]; then
@@ -195,16 +164,24 @@ analyze_sata() {
         fi
     fi
     
-    # Wear Leveling (para SSD Samsung)
+    # Wear Leveling (SSD Samsung)
     WEAR=$(echo "$SMART_INFO" | grep "Wear_Leveling_Count" | awk '{print $10}')
     if [ -n "$WEAR" ]; then
+        echo -n "  📊 Desgaste: "
         if [ "$WEAR" -gt 80 ]; then
-            echo -e "  🔴 Desgaste: ${RED}$WEAR%${RESET} ⚠️"
+            echo -e "${RED}${WEAR}% ⚠️${RESET}"
         elif [ "$WEAR" -gt 50 ]; then
-            echo -e "  🟡 Desgaste: ${YELLOW}$WEAR%${RESET}"
+            echo -e "${YELLOW}${WEAR}%${RESET}"
         else
-            echo -e "  ✅ Desgaste: ${GREEN}$WEAR%${RESET}"
+            echo -e "${GREEN}${WEAR}%${RESET}"
         fi
+    fi
+    
+    # Porcentaje usado (para SSD)
+    PERCENT_USED=$(echo "$SMART_INFO" | grep -E "Percentage_Used|Percent_Lifetime" | awk '{print $10}')
+    if [ -n "$PERCENT_USED" ]; then
+        REMAINING=$((100 - PERCENT_USED))
+        echo -e "  📊 Vida útil estimada: ${GREEN}$REMAINING%${RESET} restante"
     fi
     
     # Errores
@@ -220,11 +197,10 @@ analyze_sata() {
     # Resumen
     echo
     echo -e "${BLUE}📋 Resumen:${RESET}"
-    
     PROBLEMS=0
-    if [ -n "$TEMP" ] && [ "$TEMP" -gt 70 ] 2>/dev/null; then PROBLEMS=$((PROBLEMS+1)); fi
-    if [ -n "$REALLOC" ] && [ "$REALLOC" -gt 0 ] 2>/dev/null; then PROBLEMS=$((PROBLEMS+1)); fi
-    if [ -n "$WEAR" ] && [ "$WEAR" -gt 80 ] 2>/dev/null; then PROBLEMS=$((PROBLEMS+1)); fi
+    [ -n "$TEMP" ] && [ "$TEMP" -gt 70 ] 2>/dev/null && PROBLEMS=$((PROBLEMS+1))
+    [ -n "$REALLOC" ] && [ "$REALLOC" -gt 0 ] 2>/dev/null && PROBLEMS=$((PROBLEMS+1))
+    [ -n "$WEAR" ] && [ "$WEAR" -gt 80 ] 2>/dev/null && PROBLEMS=$((PROBLEMS+1))
     
     if [ "$PROBLEMS" -eq 0 ]; then
         echo -e "  ${GREEN}✅ Disco en excelente estado${RESET}"
@@ -233,9 +209,6 @@ analyze_sata() {
     else
         echo -e "  ${RED}❌ Disco con problemas críticos - ¡Reemplazar pronto!${RESET}"
     fi
-    
-    echo
-    separator
     echo
 }
 
@@ -259,7 +232,8 @@ fi
 
 echo "Discos encontrados:"
 for i in "${!DISKS[@]}"; do
-    echo "  $((i+1))) ${DISKS[$i]}"
+    MODEL=$(lsblk -d -o MODEL "/dev/${DISKS[$i]}" 2>/dev/null | tail -1)
+    echo "  $((i+1))) ${DISKS[$i]} ${MODEL:+, $MODEL}"
 done
 echo
 
