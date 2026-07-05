@@ -67,6 +67,7 @@ cd alfredo-tools/linux
 alfredo
 
 🪟 Windows
+```bash
 
 # Clonar el repositorio
 git clone https://github.com/AlfredoDelgadoN/alfredo-tools.git
@@ -79,6 +80,7 @@ pip install -r requirements.txt
 python alfredo.py salud
 
 🪟 Windows (WSL)
+```bash
 
 # Abrir PowerShell como Administrador
 Set-ExecutionPolicy Bypass -Scope Process -Force
