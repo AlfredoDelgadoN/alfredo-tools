@@ -1,49 +1,67 @@
 # 🛠️ Alfredo Tools
 
-Suite de herramientas para diagnóstico y mantenimiento de sistemas.
+<div align="center">
+
+**Suite de herramientas para diagnóstico y mantenimiento de sistemas**
+
+[![GitHub release](https://img.shields.io/github/v/release/AlfredoDelgadoN/alfredo-tools)](https://github.com/AlfredoDelgadoN/alfredo-tools/releases)
+[![GitHub stars](https://img.shields.io/github/stars/AlfredoDelgadoN/alfredo-tools)](https://github.com/AlfredoDelgadoN/alfredo-tools/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/AlfredoDelgadoN/alfredo-tools)](https://github.com/AlfredoDelgadoN/alfredo-tools/issues)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+</div>
+
+---
+
+## 📋 Índice
+
+- [Características](#-características)
+- [Versiones disponibles](#-versiones-disponibles)
+- [Instalación](#-instalación)
+  - [Linux](#-linux)
+  - [Windows](#-windows)
+- [Módulos disponibles](#-módulos-disponibles)
+- [Estructura del proyecto](#-estructura-del-proyecto)
+- [Requisitos](#-requisitos)
+- [Actualización](#-actualización)
+- [Contribuir](#-contribuir)
+- [Licencia](#-licencia)
+
+---
 
 ## ✨ Características
-- 28+ módulos de diagnóstico
-- Multiplataforma (Linux, Windows con WSL, macOS)
-- Fácil instalación
-- Sin dependencias complejas
 
-## 📦 Módulos Disponibles
+- 🚀 **42+ módulos** de diagnóstico y mantenimiento
+- 🖥️ **Multiplataforma**: Linux y Windows
+- 🎨 **Interfaz visual** con colores y categorías
+- 🔧 **Reparación automática** de problemas comunes
+- 🌡️ **Monitoreo** de temperatura y rendimiento
+- 📊 **Diagnóstico completo** del sistema
+- ⚡ **Rápido y ligero** sin dependencias pesadas
 
-### 🖥️ Diagnóstico de Sistema
-| Módulo | Descripción | Comando |
-|--------|-------------|---------|
-| `salud` | Estado completo del sistema | `alfredo salud` |
-| `diagnostico` | Diagnóstico completo | `alfredo diagnostico` |
-| `procesador` | Información del CPU | `alfredo procesador` |
-| `memoria` | Información de RAM | `alfredo memoria` |
-| `discos` | Información de almacenamiento | `alfredo discos` |
+---
 
-### 🌐 Red y Conectividad
-| Módulo | Descripción | Comando |
-|--------|-------------|---------|
-| `wifi` | Información WiFi | `alfredo wifi` |
-| `red` | Configuración de red | `alfredo red` |
-| `speed` | Velocidad de Internet | `alfredo speed` |
+## 📦 Versiones disponibles
 
-### 🔧 Reparación y Mantenimiento
-| Módulo | Descripción | Comando |
-|--------|-------------|---------|
-| `reparar` | Reparación automática | `alfredo reparar` |
-| `reparar-todo` | Reparación completa | `alfredo reparar-todo` |
-| `fix-audio` | Solución de audio | `alfredo fix-audio` |
-| `fix-amd` | Solución AMD | `alfredo fix-amd` |
+| Sistema | Versión | Estado | Ubicación |
+|---------|---------|--------|-----------|
+| **🐧 Linux** | Bash | ✅ Estable | `linux/` |
+| **🪟 Windows** | Python | ✅ Estable | `windows/` |
+| **🪟 Windows (WSL)** | Bash | ✅ Estable | `linux/` |
 
-### 🌡️ Monitoreo
-| Módulo | Descripción | Comando |
-|--------|-------------|---------|
-| `temp-cpu` | Temperatura CPU | `alfredo temp-cpu` |
-| `temp-discos` | Temperatura discos | `alfredo temp-discos` |
+---
 
 ## 🚀 Instalación
 
-### Linux / macOS
+### 🐧 Linux
+
 ```bash
+# Clonar el repositorio
 git clone https://github.com/AlfredoDelgadoN/alfredo-tools.git
-cd alfredo-tools
+cd alfredo-tools/linux
+
+# Ejecutar instalador
 ./install.sh
+
+# ¡Listo! Ahora ejecuta:
+alfredo
