@@ -1,0 +1,1594 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+# ============================================
+# VARIABLES GLOBALES
+# ============================================
+AUDIO_ERRORS=0
+AUDIO_WARNINGS=0
+AUDIO_OK=0
+REPAIR_AVAILABLE=false
+NEEDS_REPAIR=false
+
+# ============================================
+# FUNCIONES AUXILIARES
+# ============================================
+increment_error() { ((AUDIO_ERRORS++)); NEEDS_REPAIR=true; }
+increment_warning() { ((AUDIO_WARNINGS++)); }
+increment_ok() { ((AUDIO_OK++)); }
+
+print_status() {
+    local status="$1"
+    local message="$2"
+    case "$status" in
+        ok)   echo -e "  ${GREEN}✅ $message${NC}"; increment_ok ;;
+        warn) echo -e "  ${YELLOW}⚠️  $message${NC}"; increment_warning ;;
+        err)  echo -e "  ${RED}❌ $message${NC}"; increment_error ;;
+        info) echo -e "  ${BLUE}ℹ️  $message${NC}" ;;
+    esac
+}
+
+print_separator() { echo -e "  ${DIM}────────────────────────────────────────${NC}"; }
+
+ask_yes_no() {
+    local prompt="$1"
+    local default="${2:-n}"
+    local yn
+    
+    if [[ "$default" == "y" ]]; then
+        echo -en "  ${CYAN}$prompt [Y/n]: ${NC}"
+    else
+        echo -en "  ${CYAN}$prompt [y/N]: ${NC}"
+    fi
+    
+    read -r yn
+    yn="${yn:-$default}"
+    
+    [[ "$yn" =~ ^[Yy]$ ]]
+}
+
+show_summary() {
+    echo
+    separator
+    echo -e "  ${BOLD}📊 RESUMEN DEL DIAGNÓSTICO${NC}"
+    print_separator
+    echo -e "  ${GREEN}✅ Correctos:    $AUDIO_OK${NC}"
+    echo -e "  ${YELLOW}⚠️  Advertencias: $AUDIO_WARNINGS${NC}"
+    echo -e "  ${RED}❌ Errores:      $AUDIO_ERRORS${NC}"
+    print_separator
+    
+    if [[ $NEEDS_REPAIR == true ]]; then
+        echo -e "  ${YELLOW}🔧 Se recomienda ejecutar la reparación${NC}"
+    elif [[ $AUDIO_ERRORS -eq 0 && $AUDIO_WARNINGS -eq 0 ]]; then
+        echo -e "  ${GREEN}🎉 Todo funciona correctamente${NC}"
+    else
+        echo -e "  ${YELLOW}💡 El sistema funciona con advertencias menores${NC}"
+    fi
+    separator
+    echo
+}
+
+# ============================================
+#       LINUX - MÓDULO DE AUDIO
+# ============================================
+
+# --- Variables específicas de Linux ---
+LINUX_AUDIO_SERVER=""
+LINUX_DEFAULT_SINK=""
+LINUX_DEFAULT_SOURCE=""
+LINUX_SINKS=()
+LINUX_SOURCES=()
+LINUX_HARDWARE=()
+
+linux_detect_audio_server() {
+    echo -e "\n${BOLD}📡 Detectando servidor de audio...${NC}"
+    print_separator
+    
+    if pgrep -x "pipewire" &>/dev/null; then
+        LINUX_AUDIO_SERVER="pipewire"
+        print_status ok "PipeWire detectado (PID: $(pgrep -x pipewire | head -1))"
+        
+        # Verificar pipewire-pulse
+        if pgrep -x "pipewire-pulse" &>/dev/null; then
+            print_status ok "PipeWire-Pulse (compatibilidad PulseAudio) activo"
+        else
+            print_status warn "PipeWire-Pulse no está ejecutándose"
+        fi
+        
+        # Verificar wireplumber
+        if pgrep -x "wireplumber" &>/dev/null; then
+            print_status ok "WirePlumber (gestor de sesión) activo"
+        else
+            print_status warn "WirePlumber no está ejecutándose"
+        fi
+        
+    elif pgrep -x "pulseaudio" &>/dev/null; then
+        LINUX_AUDIO_SERVER="pulseaudio"
+        print_status ok "PulseAudio detectado (PID: $(pgrep -x pulseaudio | head -1))"
+        
+    else
+        LINUX_AUDIO_SERVER="alsa"
+        print_status warn "No se detectó PipeWire ni PulseAudio"
+        print_status info "Usando ALSA directamente (soporte limitado)"
+    fi
+    
+    # Verificar servicio systemd si aplica
+    if command -v systemctl &>/dev/null; then
+        echo
+        case "$LINUX_AUDIO_SERVER" in
+            pipewire)
+                if systemctl --user is-active pipewire.service &>/dev/null; then
+                    print_status ok "Servicio systemd pipewire.service activo"
+                else
+                    print_status warn "Servicio systemd pipewire.service inactivo"
+                fi
+                ;;
+            pulseaudio)
+                if systemctl --user is-active pulseaudio.service &>/dev/null; then
+                    print_status ok "Servicio systemd pulseaudio.service activo"
+                else
+                    print_status warn "Servicio systemd pulseaudio.service inactivo"
+                fi
+                ;;
+        esac
+    fi
+}
+
+linux_detect_hardware() {
+    echo -e "\n${BOLD}🖥️  Detectando hardware de audio...${NC}"
+    print_separator
+    
+    local found_hw=false
+    
+    # Detectar tarjetas PCI
+    if command -v lspci &>/dev/null; then
+        while IFS= read -r line; do
+            if [[ -n "$line" ]]; then
+                print_status ok "PCI: $line"
+                LINUX_HARDWARE+=("$line")
+                found_hw=true
+            fi
+        done < <(lspci 2>/dev/null | grep -i audio)
+    fi
+    
+    # Detectar dispositivos USB
+    if command -v lsusb &>/dev/null; then
+        while IFS= read -r line; do
+            if [[ -n "$line" ]]; then
+                print_status ok "USB: $line"
+                LINUX_HARDWARE+=("$line")
+                found_hw=true
+            fi
+        done < <(lsusb 2>/dev/null | grep -iE "audio|sound|headset|speaker|microphone")
+    fi
+    
+    # Verificar archivos de dispositivo ALSA
+    if [[ -d /dev/snd ]]; then
+        local card_count=$(ls -d /dev/snd/card* 2>/dev/null | wc -l)
+        if [[ $card_count -gt 0 ]]; then
+            print_status ok "Dispositivos ALSA detectados: $card_count tarjeta(s)"
+            for card in /dev/snd/card*; do
+                local card_name=$(cat "$card/id" 2>/dev/null || echo "desconocido")
+                print_status info "  └─ $(basename $card): $card_name"
+            done
+            found_hw=true
+        fi
+    else
+        print_status err "No existe /dev/snd - posible problema de kernel o permisos"
+    fi
+    
+    if [[ $found_hw == false ]]; then
+        print_status err "No se detectó hardware de audio"
+    fi
+}
+
+linux_check_permissions() {
+    echo -e "\n${BOLD}🔐 Verificando permisos...${NC}"
+    print_separator
+    
+    # Verificar grupo audio
+    if groups | grep -q audio; then
+        print_status ok "Usuario en el grupo 'audio'"
+    else
+        print_status warn "Usuario NO está en el grupo 'audio'"
+        print_status info "Puede causar problemas de permisos"
+    fi
+    
+    # Verificar acceso a dispositivos
+    if [[ -r /dev/snd ]]; then
+        print_status ok "Acceso de lectura a /dev/snd"
+    else
+        print_status err "Sin acceso de lectura a /dev/snd"
+    fi
+    
+    if [[ -w /dev/snd ]]; then
+        print_status ok "Acceso de escritura a /dev/snd"
+    else
+        print_status err "Sin acceso de escritura a /dev/snd"
+    fi
+    
+    # Verificar sesión DBus (necesario para PipeWire/PulseAudio)
+    if [[ -n "$DBUS_SESSION_BUS_ADDRESS" ]]; then
+        print_status ok "Sesión DBus configurada"
+    else
+        print_status warn "Sesión DBus no configurada"
+    fi
+    
+    # Verificar XDG_RUNTIME_DIR
+    if [[ -n "$XDG_RUNTIME_DIR" && -d "$XDG_RUNTIME_DIR" ]]; then
+        print_status ok "XDG_RUNTIME_DIR válido: $XDG_RUNTIME_DIR"
+    else
+        print_status warn "XDG_RUNTIME_DIR no válido o ausente"
+    fi
+}
+
+linux_check_sinks() {
+    echo -e "\n${BOLD}🔊 Dispositivos de salida (Sinks)...${NC}"
+    print_separator
+    
+    if [[ "$LINUX_AUDIO_SERVER" == "alsa" ]]; then
+        # Usar aplay para listar con ALSA puro
+        if command -v aplay &>/dev/null; then
+            aplay -l 2>/dev/null | grep "^card" | while read -r line; do
+                print_status info "ALSA: $line"
+            done
+        fi
+        return
+    fi
+    
+    local sinks
+    sinks=$(pactl list short sinks 2>/dev/null)
+    
+    if [[ -z "$sinks" ]]; then
+        print_status err "No se encontraron dispositivos de salida"
+        return
+    fi
+    
+    local sink_count=0
+    local active_count=0
+    
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        
+        local sink_id=$(echo "$line" | awk '{print $1}')
+        local sink_name=$(echo "$line" | awk '{print $2}')
+        local sink_state=$(pactl list sinks 2>/dev/null | grep -A 20 "Sink #$sink_id" | grep "State:" | awk '{print $2}')
+        local sink_desc=$(pactl list sinks 2>/dev/null | grep -A 20 "Sink #$sink_id" | grep "Description:" | sed 's/.*: //')
+        local sink_vol=$(pactl list sinks 2>/dev/null | grep -A 20 "Sink #$sink_id" | grep "Volume:" | head -1 | awk '{print $5}' | sed 's/%//')
+        local sink_mute=$(pactl list sinks 2>/dev/null | grep -A 20 "Sink #$sink_id" | grep "Mute:" | awk '{print $2}')
+        
+        LINUX_SINKS+=("$sink_name")
+        ((sink_count++))
+        
+        echo
+        print_status info "Sink #$sink_id: $sink_desc"
+        print_status info "  └─ Nombre: $sink_name"
+        print_status info "  └─ Estado: $sink_state"
+        print_status info "  └─ Volumen: ${sink_vol}%"
+        
+        if [[ "$sink_mute" == "yes" ]]; then
+            print_status warn "  └─ 🔇 MUTADO"
+        else
+            print_status ok "  └─ 🔊 No silenciado"
+        fi
+        
+        if [[ "$sink_state" == "RUNNING" ]]; then
+            ((active_count++))
+        fi
+    done <<< "$sinks"
+    
+    echo
+    print_status info "Total: $sink_count dispositivo(s), $active_count activo(s)"
+    
+    # Detectar sink por defecto
+    LINUX_DEFAULT_SINK=$(pactl info 2>/dev/null | grep "Default Sink:" | awk '{print $3}')
+    if [[ -n "$LINUX_DEFAULT_SINK" ]]; then
+        print_status ok "Sink por defecto: $LINUX_DEFAULT_SINK"
+    else
+        print_status err "No hay sink por defecto configurado"
+    fi
+}
+
+linux_check_sources() {
+    echo -e "\n${BOLD}🎤 Dispositivos de entrada (Sources)...${NC}"
+    print_separator
+    
+    if [[ "$LINUX_AUDIO_SERVER" == "alsa" ]]; then
+        if command -v arecord &>/dev/null; then
+            arecord -l 2>/dev/null | grep "^card" | while read -r line; do
+                print_status info "ALSA: $line"
+            done
+        fi
+        return
+    fi
+    
+    local sources
+    sources=$(pactl list short sources 2>/dev/null)
+    
+    if [[ -z "$sources" ]]; then
+        print_status warn "No se encontraron dispositivos de entrada"
+        return
+    fi
+    
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        
+        local source_id=$(echo "$line" | awk '{print $1}')
+        local source_name=$(echo "$line" | awk '{print $2}')
+        local source_desc=$(pactl list sources 2>/dev/null | grep -A 20 "Source #$source_id" | grep "Description:" | sed 's/.*: //')
+        local source_state=$(pactl list sources 2>/dev/null | grep -A 20 "Source #$source_id" | grep "State:" | awk '{print $2}')
+        local source_mute=$(pactl list sources 2>/dev/null | grep -A 20 "Source #$source_id" | grep "Mute:" | awk '{print $2}')
+        
+        LINUX_SOURCES+=("$source_name")
+        
+        echo
+        print_status info "Source #$source_id: $source_desc"
+        print_status info "  └─ Nombre: $source_name"
+        print_status info "  └─ Estado: $source_state"
+        
+        if [[ "$source_mute" == "yes" ]]; then
+            print_status warn "  └─ 🔇 MUTADO"
+        else
+            print_status ok "  └─ 🎤 Activo"
+        fi
+    done <<< "$sources"
+    
+    LINUX_DEFAULT_SOURCE=$(pactl info 2>/dev/null | grep "Default Source:" | awk '{print $3}')
+    if [[ -n "$LINUX_DEFAULT_SOURCE" ]]; then
+        echo
+        print_status ok "Source por defecto: $LINUX_DEFAULT_SOURCE"
+    fi
+}
+
+linux_check_modules() {
+    echo -e "\n${BOLD}📦 Módulos de audio cargados...${NC}"
+    print_separator
+    
+    # Verificar módulos del kernel
+    local kernel_modules=("snd_hda_intel" "snd_usb_audio" "snd_soc_core" "snd_bcm2835")
+    local found_any=false
+    
+    for mod in "${kernel_modules[@]}"; do
+        if lsmod | grep -q "^$mod"; then
+            print_status ok "Módulo kernel: $mod"
+            found_any=true
+        fi
+    done
+    
+    if [[ $found_any == false ]]; then
+        print_status info "No se encontraron módulos de audio específicos verificados"
+        print_status info "Mostrando todos los módulos snd_*:"
+        lsmod | grep "^snd" | head -5 | while read -r line; do
+            print_status info "  └─ $line"
+        done
+    fi
+    
+    # Verificar módulos PulseAudio/PipeWire si aplica
+    if [[ "$LINUX_AUDIO_SERVER" == "pulseaudio" ]]; then
+        echo
+        local pa_modules=$(pactl list short modules 2>/dev/null | wc -l)
+        print_status info "Módulos PulseAudio cargados: $pa_modules"
+    fi
+}
+
+linux_check_applications() {
+    echo -e "\n${BOLD}🎵 Aplicaciones usando audio...${NC}"
+    print_separator
+    
+    local inputs
+    inputs=$(pactl list short sink-inputs 2>/dev/null)
+    
+    if [[ -z "$inputs" ]]; then
+        print_status info "No hay aplicaciones reproduciendo audio"
+        return
+    fi
+    
+    local count=0
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        
+        local input_id=$(echo "$line" | awk '{print $1}')
+        local sink_id=$(echo "$line" | awk '{print $2}')
+        local app_name=$(pactl list sink-inputs 2>/dev/null | grep -A 30 "Sink Input #$input_id" | grep "application.name" | sed 's/.*= "//' | sed 's/"//')
+        local media_name=$(pactl list sink-inputs 2>/dev/null | grep -A 30 "Sink Input #$input_id" | grep "media.name" | sed 's/.*= "//' | sed 's/"//')
+        
+        print_status ok "[$input_id] $app_name"
+        [[ -n "$media_name" ]] && print_status info "     └─ Reproduciendo: $media_name"
+        print_status info "     └─ Sink: $sink_id"
+        ((count++))
+    done <<< "$inputs"
+    
+    echo
+    print_status info "Total: $count aplicación(es)"
+}
+
+linux_audio_test() {
+    echo -e "\n${BOLD}🔔 TEST DE SONIDO${NC}"
+    print_separator
+    
+    local test_passed=false
+    local test_method=""
+    
+    # Método 1: speaker-test con PipeWire/PulseAudio
+    if ! $test_passed && [[ "$LINUX_AUDIO_SERVER" != "alsa" ]]; then
+        echo -e "  ${BLUE}▶ Método 1: speaker-test (sine wave)${NC}"
+        if command -v speaker-test &>/dev/null; then
+            # Silenciar salida para no molestar, pero verificar que no hay error
+            if timeout 3 speaker-test -t sine -f 440 -c 2 -l 1 &>/dev/null; then
+                print_status ok "speaker-test ejecutado sin errores"
+                test_passed=true
+                test_method="speaker-test"
+            else
+                print_status warn "speaker-test reportó errores"
+            fi
+        else
+            print_status warn "speaker-test no disponible"
+        fi
+    fi
+    
+    # Método 2: paplay con archivo generado
+    if ! $test_passed && [[ "$LINUX_AUDIO_SERVER" != "alsa" ]] && command -v paplay &>/dev/null; then
+        echo -e "  ${BLUE}▶ Método 2: paplay con tono generado${NC}"
+        
+        # Generar archivo WAV con tono
+        local tmp_file="/tmp/audio_test_$$.wav"
+        if command -v sox &>/dev/null; then
+            sox -n -r 44100 -c 1 "$tmp_file" synth 1 sine 440 2>/dev/null
+            if [[ -f "$tmp_file" ]]; then
+                if timeout 3 paplay "$tmp_file" &>/dev/null; then
+                    print_status ok "paplay reprodujo el tono sin errores"
+                    test_passed=true
+                    test_method="paplay"
+                else
+                    print_status warn "paplay reportó errores"
+                fi
+                rm -f "$tmp_file"
+            fi
+        else
+            print_status warn "sox no disponible para generar tono"
+        fi
+    fi
+    
+    # Método 3: aplay con ALSA
+    if ! $test_passed && command -v aplay &>/dev/null; then
+        echo -e "  ${BLUE}▶ Método 3: aplay (ALSA directo)${NC}"
+        
+        local tmp_file="/tmp/audio_test_$$.wav"
+        # Generar WAV mínimo con header válido
+        if command -v sox &>/dev/null; then
+            sox -n -r 8000 -c 1 "$tmp_file" synth 1 sine 440 2>/dev/null
+        else
+            # Generar WAV crudo mínimo (silencio con header)
+            printf '\x52\x49\x46\x46\x24\x00\x00\x00\x57\x41\x56\x45\x66\x6d\x74\x20\x10\x00\x00\x00\x01\x00\x01\x00\x40\x1f\x00\x00\x40\x1f\x00\x00\x02\x00\x08\x00\x64\x61\x74\x61\x00\x00\x00\x00' > "$tmp_file"
+        fi
+        
+        if [[ -f "$tmp_file" ]]; then
+            # Determinar dispositivo ALSA
+            local alsa_dev="default"
+            if [[ -n "$LINUX_DEFAULT_SINK" ]] && [[ "$LINUX_AUDIO_SERVER" == "pulse" ]]; then
+                alsa_dev="pulse"
+            fi
+            
+            if timeout 3 aplay -D "$alsa_dev" "$tmp_file" &>/dev/null; then
+                print_status ok "aplay reprodujo sin errores"
+                test_passed=true
+                test_method="aplay"
+            else
+                print_status warn "aplay reportó errores"
+            fi
+            rm -f "$tmp_file"
+        fi
+    fi
+    
+    # Método 4: Parec test con cmd
+    if ! $test_passed && command -v pactl &>/dev/null && [[ -n "$LINUX_DEFAULT_SINK" ]]; then
+        echo -e "  ${BLUE}▶ Método 4: pactl play-sample${NC}"
+        
+        # Crear sample
+        if command -v sox &>/dev/null; then
+            local tmp_file="/tmp/audio_sample_$$.wav"
+            sox -n -r 44100 -c 1 "$tmp_file" synth 1 sine 440 2>/dev/null
+            if pactl upload-sample "$tmp_file" "test_tone" 2>/dev/null; then
+                if timeout 3 pactl play-sample "test_tone" 2>/dev/null; then
+                    print_status ok "pactl play-sample ejecutado sin errores"
+                    test_passed=true
+                    test_method="pactl"
+                fi
+                pactl remove-sample "test_tone" 2>/dev/null
+            fi
+            rm -f "$tmp_file"
+        fi
+    fi
+    
+    echo
+    if $test_passed; then
+        print_status ok "TEST SUPERADO (método: $test_method)"
+        print_status info "Si no escuchaste nada, verifica volumen y conexiones físicas"
+    else
+        print_status err "TEST FALLIDO - No se pudo reproducir audio"
+        NEEDS_REPAIR=true
+    fi
+}
+
+linux_audio_repair() {
+    echo -e "\n${BOLD}🔧 REPARACIÓN DE AUDIO${NC}"
+    print_separator
+    
+    REPAIR_AVAILABLE=true
+    local repairs_done=0
+    
+    # --- Reparación 1: Desmutear ---
+    echo -e "\n  ${CYAN}▸ Desmutear dispositivos${NC}"
+    if [[ -n "$LINUX_DEFAULT_SINK" ]]; then
+        pactl set-sink-mute "$LINUX_DEFAULT_SINK" 0 2>/dev/null && {
+            print_status ok "Sink desmuteado"
+            ((repairs_done++))
+        }
+    fi
+    if [[ -n "$LINUX_DEFAULT_SOURCE" ]]; then
+        pactl set-source-mute "$LINUX_DEFAULT_SOURCE" 0 2>/dev/null && {
+            print_status ok "Source desmuteado"
+            ((repairs_done++))
+        }
+    fi
+    # Desmutear todos
+    pactl list short sinks | awk '{print $2}' | while read sink; do
+        pactl set-sink-mute "$sink" 0 2>/dev/null
+    done
+    pactl list short sources | awk '{print $2}' | while read src; do
+        pactl set-source-mute "$src" 0 2>/dev/null
+    done
+    
+    # --- Reparación 2: Establecer volumen adecuado ---
+    echo -e "\n  ${CYAN}▸ Ajustar volumen al 75%${NC}"
+    if [[ -n "$LINUX_DEFAULT_SINK" ]]; then
+        pactl set-sink-volume "$LINUX_DEFAULT_SINK" 75% 2>/dev/null && {
+            print_status ok "Volumen de sink ajustado a 75%"
+            ((repairs_done++))
+        }
+    fi
+    
+    # --- Reparación 3: Establecer sink por defecto ---
+    echo -e "\n  ${CYAN}▸ Configurar sink por defecto${NC}"
+    if [[ ${#LINUX_SINKS[@]} -gt 0 && (-z "$LINUX_DEFAULT_SINK" || "$NEEDS_REPAIR" == true) ]]; then
+        local new_default="${LINUX_SINKS[0]}"
+        # Preferir sinks que no sean de monitor
+        for sink in "${LINUX_SINKS[@]}"; do
+            if [[ ! "$sink" =~ .*monitor.* ]]; then
+                new_default="$sink"
+                break
+            fi
+        done
+        
+        if pactl set-default-sink "$new_default" 2>/dev/null; then
+            print_status ok "Nuevo sink por defecto: $new_default"
+            LINUX_DEFAULT_SINK="$new_default"
+            ((repairs_done++))
+        fi
+    fi
+    
+    # --- Reparación 4: Reiniciar servidor de audio ---
+    echo -e "\n  ${CYAN}▸ Reiniciar servidor de audio${NC}"
+    
+    case "$LINUX_AUDIO_SERVER" in
+        pipewire)
+            if ask_yes_no "¿Reiniciar PipeWire?" "n"; then
+                systemctl --user restart pipewire.service 2>/dev/null
+                systemctl --user restart pipewire-pulse.service 2>/dev/null
+                systemctl --user restart wireplumber.service 2>/dev/null
+                sleep 2
+                if pgrep -x pipewire &>/dev/null; then
+                    print_status ok "PipeWire reiniciado correctamente"
+                    ((repairs_done++))
+                else
+                    print_status err "PipeWire no se pudo reiniciar"
+                fi
+            else
+                print_status info "Omitido por usuario"
+            fi
+            ;;
+        pulseaudio)
+            if ask_yes_no "¿Reiniciar PulseAudio?" "n"; then
+                pulseaudio -k 2>/dev/null
+                sleep 1
+                pulseaudio --start 2>/dev/null
+                sleep 2
+                if pgrep -x pulseaudio &>/dev/null; then
+                    print_status ok "PulseAudio reiniciado correctamente"
+                    ((repairs_done++))
+                else
+                    print_status err "PulseAudio no se pudo reiniciar"
+                fi
+            else
+                print_status info "Omitido por usuario"
+            fi
+            ;;
+        alsa)
+            print_status info "ALSA no requiere servicio, verificando módulos..."
+            if ask_yes_no "¿Recargar módulos ALSA?" "n"; then
+                sudo modprobe -r snd_hda_intel 2>/dev/null
+                sleep 1
+                sudo modprobe snd_hda_intel 2>/dev/null
+                print_status ok "Módulos ALSA recargados"
+                ((repairs_done++))
+            fi
+            ;;
+    esac
+    
+    # --- Reparación 5: Mover aplicaciones al sink correcto ---
+    echo -e "\n  ${CYAN}▸ Mover aplicaciones al sink actual${NC}"
+    if [[ -n "$LINUX_DEFAULT_SINK" ]]; then
+        local moved=0
+        pactl list short sink-inputs | awk '{print $1}' | while read input; do
+            if pactl move-sink-input "$input" "$LINUX_DEFAULT_SINK" 2>/dev/null; then
+                ((moved++)) || true
+            fi
+        done
+        if [[ $moved -gt 0 ]]; then
+            print_status ok "$moved aplicación(es) movida(s)"
+            ((repairs_done++))
+        else
+            print_status info "No hay aplicaciones para mover"
+        fi
+    fi
+    
+    # --- Reparación 6: Verificar/crear configuración ---
+    echo -e "\n  ${CYAN}▸ Verificar configuración${NC}"
+    local config_dir="$HOME/.config/pulse"
+    if [[ "$LINUX_AUDIO_SERVER" == "pulseaudio" ]]; then
+        mkdir -p "$config_dir" 2>/dev/null
+        if [[ ! -f "$config_dir/default.pa" ]]; then
+            print_status info "Creando configuración por defecto..."
+            cp /etc/pulse/default.pa "$config_dir/" 2>/dev/null && {
+                print_status ok "Configuración copiada"
+                ((repairs_done++))
+            }
+        fi
+    fi
+    
+    echo
+    print_separator
+    if [[ $repairs_done -gt 0 ]]; then
+        print_status ok "Reparaciones realizadas: $repairs_done"
+        print_status info "Ejecuta el diagnóstico nuevamente para verificar"
+    else
+        print_status info "No se realizaron reparaciones"
+    fi
+    print_separator
+}
+
+linux_audio_menu() {
+    while true; do
+        echo -e "\n${BOLD}${MAGENTA}═══════════════════════════════════════${NC}"
+        echo -e "${BOLD}     🔊 DIAGNÓSTICO DE AUDIO - LINUX${NC}"
+        echo -e "${BOLD}${MAGENTA}═══════════════════════════════════════${NC}"
+        echo -e "  ${GREEN}1${NC} │ 📋 Diagnóstico completo"
+        echo -e "  ${GREEN}2${NC} │ 🔔 Test de sonido"
+        echo -e "  ${GREEN}3${NC} │ 🔧 Reparación"
+        echo -e "  ${GREEN}4${NC} │ 🚀 Diagnóstico + Test + Reparación automática"
+        echo -e "  ${YELLOW}0${NC} │ ↩️  Volver"
+        echo -e "${BOLD}${MAGENTA}═══════════════════════════════════════${NC}"
+        echo -en "  ${CYAN}Selecciona una opción: ${NC}"
+        
+        read -r option
+        
+        case "$option" in
+            1)
+                # Reset contadores
+                AUDIO_ERRORS=0; AUDIO_WARNINGS=0; AUDIO_OK=0; NEEDS_REPAIR=false
+                linux_detect_audio_server
+                linux_detect_hardware
+                linux_check_permissions
+                linux_check_modules
+                linux_check_sinks
+                linux_check_sources
+                linux_check_applications
+                show_summary
+                ;;
+            2)
+                linux_detect_audio_server
+                linux_check_sinks
+                linux_audio_test
+                ;;
+            3)
+                linux_detect_audio_server
+                linux_check_sinks
+                linux_audio_repair
+                ;;
+            4)
+                AUDIO_ERRORS=0; AUDIO_WARNINGS=0; AUDIO_OK=0; NEEDS_REPAIR=false
+                linux_detect_audio_server
+                linux_detect_hardware
+                linux_check_permissions
+                linux_check_modules
+                linux_check_sinks
+                linux_check_sources
+                linux_check_applications
+                linux_audio_test
+                if [[ $NEEDS_REPAIR == true ]]; then
+                    echo
+                    if ask_yes_no "¿Deseas intentar reparar automáticamente?" "y"; then
+                        linux_audio_repair
+                    fi
+                fi
+                show_summary
+                ;;
+            0)
+                return 0
+                ;;
+            *)
+                echo -e "  ${RED}Opción no válida${NC}"
+                ;;
+        esac
+    done
+}
+
+# ============================================
+#         MAC - MÓDULO DE AUDIO
+# ============================================
+
+mac_detect_hardware() {
+    echo -e "\n${BOLD}🖥️  Detectando hardware de audio...${NC}"
+    print_separator
+    
+    local audio_devices
+    audio_devices=$(system_profiler SPAudioDataType 2>/dev/null)
+    
+    if [[ -z "$audio_devices" ]]; then
+        print_status err "No se pudo obtener información de audio"
+        return
+    fi
+    
+    # Extraer dispositivos de salida
+    echo -e "  ${CYAN}▸ Dispositivos de salida:${NC}"
+    local in_output=false
+    while IFS= read -r line; do
+        if [[ "$line" =~ "Output Devices:" ]]; then
+            in_output=true
+            continue
+        elif [[ "$line" =~ "Input Devices:" ]]; then
+            in_output=false
+            break
+        fi
+        
+        if $in_output; then
+            if [[ "$line" =~ "_name:" ]]; then
+                local name=$(echo "$line" | sed 's/.*_name: //')
+                print_status ok "$name"
+            elif [[ "$line" =~ "connected:" ]]; then
+                local connected=$(echo "$line" | sed 's/.*connected: //')
+                if [[ "$connected" == "false" || "$connected" == "no" ]]; then
+                    print_status warn "  └─ Desconectado"
+                fi
+            fi
+        fi
+    done <<< "$audio_devices"
+    
+    # Extraer dispositivos de entrada
+    echo -e "\n  ${CYAN}▸ Dispositivos de entrada:${NC}"
+    local in_input=false
+    while IFS= read -r line; do
+        if [[ "$line" =~ "Input Devices:" ]]; then
+            in_input=true
+            continue
+        fi
+        
+        if $in_input; then
+            if [[ "$line" =~ "_name:" ]]; then
+                local name=$(echo "$line" | sed 's/.*_name: //')
+                print_status ok "$name"
+            elif [[ "$line" =~ "connected:" ]]; then
+                local connected=$(echo "$line" | sed 's/.*connected: //')
+                if [[ "$connected" == "false" || "$connected" == "no" ]]; then
+                    print_status warn "  └─ Desconectado"
+                fi
+            fi
+        fi
+    done <<< "$audio_devices"
+}
+
+mac_check_coreaudio() {
+    echo -e "\n${BOLD}📡 Verificando CoreAudio...${NC}"
+    print_separator
+    
+    # Verificar que CoreAudio esté corriendo
+    if pgrep -x "coreaudiod" &>/dev/null; then
+        print_status ok "CoreAudio daemon ejecutándose (PID: $(pgrep -x coreaudiod))"
+    else
+        print_status err "CoreAudio daemon NO está ejecutándose"
+        NEEDS_REPAIR=true
+    fi
+    
+    # Verificar permisos del daemon
+    local ca_path="/System/Library/Frameworks/CoreAudio.framework/Versions/A/CoreAudio"
+    if [[ -f "$ca_path" ]]; then
+        print_status ok "Framework CoreAudio presente"
+    fi
+    
+    # Verificar plugins de audio
+    local plugin_dir="/Library/Audio/Plug-Ins/HAL"
+    if [[ -d "$plugin_dir" ]]; then
+        local plugin_count=$(ls -1 "$plugin_dir" 2>/dev/null | wc -l)
+        print_status ok "Plugins HAL instalados: $plugin_count"
+        ls -1 "$plugin_dir" 2>/dev/null | head -5 | while read -r plugin; do
+            print_status info "  └─ $plugin"
+        done
+    fi
+}
+
+mac_check_volume() {
+    echo -e "\n${BOLD}🔊 Verificando volumen y mute...${NC}"
+    print_separator
+    
+    # Obtener volumen de salida
+    local output_volume=$(osascript -e 'output volume of (get volume settings)' 2>/dev/null)
+    local output_muted=$(osascript -e 'output muted of (get volume settings)' 2>/dev/null)
+    local input_volume=$(osascript -e 'input volume of (get volume settings)' 2>/dev/null)
+    local input_muted=$(osascript -e 'input muted of (get volume settings)' 2>/dev/null)
+    
+    if [[ -n "$output_volume" ]]; then
+        print_status info "Volumen de salida: $output_volume%"
+        if [[ "$output_volume" -eq 0 ]]; then
+            print_status warn "Volumen de salida al mínimo"
+        elif [[ "$output_volume" -lt 25 ]]; then
+            print_status warn "Volumen de salida muy bajo"
+        else
+            print_status ok "Volumen de salida adecuado"
+        fi
+    fi
+    
+    if [[ "$output_muted" == "true" ]]; then
+        print_status err "Salida de audio SILENCIADA"
+        NEEDS_REPAIR=true
+    else
+        print_status ok "Salida de audio no silenciada"
+    fi
+    
+    echo
+    if [[ -n "$input_volume" ]]; then
+        print_status info "Volumen de entrada: $input_volume%"
+    fi
+    
+    if [[ "$input_muted" == "true" ]]; then
+        print_status warn "Entrada de audio silenciada"
+    else
+        print_status ok "Entrada de audio activa"
+    fi
+    
+    # Dispositivo de salida actual
+    local current_device=$(osascript -e 'get name of current output device' 2>/dev/null)
+    if [[ -n "$current_device" ]]; then
+        echo
+        print_status ok "Dispositivo de salida actual: $current_device"
+    fi
+}
+
+mac_check_audio_apps() {
+    echo -e "\n${BOLD}🎵 Aplicaciones usando audio...${NC}"
+    print_separator
+    
+    # Listar apps con conexiones de audio
+    local audio_apps=$(lsof 2>/dev/null | grep -i "coreaudio\|audio" | awk '{print $1}' | sort -u)
+    
+    if [[ -z "$audio_apps" ]]; then
+        print_status info "No hay aplicaciones detectadas usando audio"
+        return
+    fi
+    
+    echo "$audio_apps" | while read -r app; do
+        print_status ok "$app"
+    done
+}
+
+mac_audio_test() {
+    echo -e "\n${BOLD}🔔 TEST DE SONIDO${NC}"
+    print_separator
+    
+    local test_passed=false
+    
+    # Método 1: afplay con sonido del sistema
+    echo -e "  ${BLUE}▶ Método 1: Sonido del sistema${NC}"
+    local system_sounds=(
+        "/System/Library/Sounds/Glass.aiff"
+        "/System/Library/Sounds/Ping.aiff"
+        "/System/Library/Sounds/Pop.aiff"
+        "/System/Library/Sounds/Purr.aiff"
+        "/System/Library/Sounds/Tink.aiff"
+        "/System/Library/Sounds/Funk.aiff"
+        "/System/Library/Sounds/Blow.aiff"
+        "/System/Library/Sounds/Bottle.aiff"
+        "/System/Library/Sounds/Hero.aiff"
+        "/System/Library/Sounds/Morse.aiff"
+        "/System/Library/Sounds/Submarine.aiff"
+        "/System/Library/Sounds/Sosumi.aiff"
+    )
+    
+    for sound in "${system_sounds[@]}"; do
+        if [[ -f "$sound" ]]; then
+            if timeout 3 afplay "$sound" 2>/dev/null; then
+                print_status ok "Reproducido: $(basename "$sound")"
+                test_passed=true
+                break
+            else
+                print_status warn "Error al reproducir: $(basename "$sound")"
+            fi
+        fi
+    done
+    
+    # Método 2: say (text-to-speech)
+    if ! $test_passed; then
+        echo -e "  ${BLUE}▶ Método 2: Text-to-Speech${NC}"
+        if timeout 3 say "Test" 2>/dev/null; then
+            print_status ok "Say ejecutado sin errores"
+            test_passed=true
+        else
+            print_status warn "Say reportó errores"
+        fi
+    fi
+    
+    # Método 3: Generar tono con sox
+    if ! $test_passed && command -v sox &>/dev/null; then
+        echo -e "  ${BLUE}▶ Método 3: Tono generado con sox${NC}"
+        local tmp_file="/tmp/mac_audio_test_$$.aiff"
+        if sox -n -r 44100 -c 1 "$tmp_file" synth 1 sine 440 2>/dev/null; then
+            if timeout 3 afplay "$tmp_file" 2>/dev/null; then
+                print_status ok "Tono generado reproducido"
+                test_passed=true
+            fi
+            rm -f "$tmp_file"
+        fi
+    fi
+    
+    echo
+    if $test_passed; then
+        print_status ok "TEST SUPERADO"
+        print_status info "Si no escuchaste nada, verifica volumen y conexiones"
+    else
+        print_status err "TEST FALLIDO"
+        NEEDS_REPAIR=true
+    fi
+}
+
+mac_audio_repair() {
+    echo -e "\n${BOLD}🔧 REPARACIÓN DE AUDIO${NC}"
+    print_separator
+    
+    REPAIR_AVAILABLE=true
+    local repairs_done=0
+    
+    # --- Reparación 1: Desmutear ---
+    echo -e "\n  ${CYAN}▸ Desmutear audio${NC}"
+    if osascript -e 'set volume output muted false' 2>/dev/null; then
+        print_status ok "Salida desmuteada"
+        ((repairs_done++))
+    fi
+    if osascript -e 'set volume input muted false' 2>/dev/null; then
+        print_status ok "Entrada desmuteada"
+        ((repairs_done++))
+    fi
+    
+    # --- Reparación 2: Ajustar volumen ---
+    echo -e "\n  ${CYAN}▸ Ajustar volumen al 75%${NC}"
+    if osascript -e "set volume output volume 75" 2>/dev/null; then
+        print_status ok "Volumen ajustado a 75%"
+        ((repairs_done++))
+    fi
+    
+    # --- Reparación 3: Reiniciar CoreAudio ---
+    echo -e "\n  ${CYAN}▸ Reiniciar CoreAudio${NC}"
+    if ask_yes_no "¿Reiniciar CoreAudio? (requiere sudo)" "n"; then
+        echo -e "  ${YELLOW}Se solicitará contraseña de administrador...${NC}"
+        if sudo killall coreaudiod 2>/dev/null; then
+            sleep 3
+            if pgrep -x coreaudiod &>/dev/null; then
+                print_status ok "CoreAudio reiniciado correctamente"
+                ((repairs_done++))
+            else
+                print_status warn "CoreAudio no se reinició automáticamente"
+                print_status info "Intentando inicio manual..."
+                sudo coreaudiod &
+                sleep 2
+                if pgrep -x coreaudiod &>/dev/null; then
+                    print_status ok "CoreAudio iniciado manualmente"
+                    ((repairs_done++))
+                else
+                    print_status err "No se pudo iniciar CoreAudio"
+                fi
+            fi
+        else
+            print_status err "No se pudo detener CoreAudio"
+        fi
+    else
+        print_status info "Omitido por usuario"
+    fi
+    
+    # --- Reparación 4: Reset de configuración de audio ---
+    echo -e "\n  ${CYAN}▸ Limpiar caché de audio${NC}"
+    if ask_yes_no "¿Limpiar preferencias de audio?" "n"; then
+        local pref_files=(
+            "$HOME/Library/Preferences/com.apple.audio.AudioMIDISetup.plist"
+            "$HOME/Library/Preferences/com.apple.soundpref.plist"
+            "$HOME/Library/ByHost/com.apple.audio.DeviceSettings.*"
+        )
+        
+        for pref in "${pref_files[@]}"; do
+            if ls $pref &>/dev/null; then
+                rm -f $pref 2>/dev/null
+                print_status ok "Eliminado: $pref"
+                ((repairs_done++))
+            fi
+        done
+    else
+        print_status info "Omitido por usuario"
+    fi
+    
+    echo
+    print_separator
+    if [[ $repairs_done -gt 0 ]]; then
+        print_status ok "Reparaciones realizadas: $repairs_done"
+    else
+        print_status info "No se realizaron reparaciones"
+    fi
+    print_separator
+}
+
+mac_audio_menu() {
+    while true; do
+        echo -e "\n${BOLD}${MAGENTA}═══════════════════════════════════════${NC}"
+        echo -e "${BOLD}     🔊 DIAGNÓSTICO DE AUDIO - macOS${NC}"
+        echo -e "${BOLD}${MAGENTA}═══════════════════════════════════════${NC}"
+        echo -e "  ${GREEN}1${NC} │ 📋 Diagnóstico completo"
+        echo -e "  ${GREEN}2${NC} │ 🔔 Test de sonido"
+        echo -e "  ${GREEN}3${NC} │ 🔧 Reparación"
+        echo -e "  ${GREEN}4${NC} │ 🚀 Diagnóstico + Test + Reparación automática"
+        echo -e "  ${YELLOW}0${NC} │ ↩️  Volver"
+        echo -e "${BOLD}${MAGENTA}═══════════════════════════════════════${NC}"
+        echo -en "  ${CYAN}Selecciona una opción: ${NC}"
+        
+        read -r option
+        
+        case "$option" in
+            1)
+                AUDIO_ERRORS=0; AUDIO_WARNINGS=0; AUDIO_OK=0; NEEDS_REPAIR=false
+                mac_detect_hardware
+                mac_check_coreaudio
+                mac_check_volume
+                mac_check_audio_apps
+                show_summary
+                ;;
+            2)
+                mac_check_volume
+                mac_audio_test
+                ;;
+            3)
+                mac_audio_repair
+                ;;
+            4)
+                AUDIO_ERRORS=0; AUDIO_WARNINGS=0; AUDIO_OK=0; NEEDS_REPAIR=false
+                mac_detect_hardware
+                mac_check_coreaudio
+                mac_check_volume
+                mac_check_audio_apps
+                mac_audio_test
+                if [[ $NEEDS_REPAIR == true ]]; then
+                    echo
+                    if ask_yes_no "¿Deseas intentar reparar automáticamente?" "y"; then
+                        mac_audio_repair
+                    fi
+                fi
+                show_summary
+                ;;
+            0)
+                return 0
+                ;;
+            *)
+                echo -e "  ${RED}Opción no válida${NC}"
+                ;;
+        esac
+    done
+}
+
+# ============================================
+#       WINDOWS - MÓDULO DE AUDIO
+# ============================================
+
+# Función auxiliar para ejecutar PowerShell
+win_ps() {
+    powershell.exe -NoProfile -NonInteractive -Command "$1" 2>/dev/null | tr -d '\r'
+}
+
+win_ps_admin() {
+    powershell.exe -NoProfile -NonInteractive -Command "Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -NonInteractive -Command \"$1\"' -Wait" 2>/dev/null | tr -d '\r'
+}
+
+windows_detect_devices() {
+    echo -e "\n${BOLD}🖥️  Detectando dispositivos de audio...${NC}"
+    print_separator
+    
+    # Obtener dispositivos de reproducción
+    echo -e "  ${CYAN}▸ Dispositivos de reproducción:${NC}"
+    local playback_devices
+    playback_devices=$(win_ps '
+        Get-AudioDevice -List | Where-Object { $_.Type -eq "Playback" } | ForEach-Object {
+            "$($_.Name)|$($_.ID)|$($_.Default)"
+        }
+    ')
+    
+    if [[ -n "$playback_devices" ]]; then
+        while IFS='|' read -r name id is_default; do
+            [[ -z "$name" ]] && continue
+            if [[ "$is_default" == "True" ]]; then
+                print_status ok "$name [POR DEFECTO]"
+            else
+                print_status info "$name"
+            fi
+        done <<< "$playback_devices"
+    else
+        # Método alternativo con Get-PnpDevice
+        local pnp_devices
+        pnp_devices=$(win_ps '
+            Get-PnpDevice -Class "MEDIA" -Status OK | Where-Object { 
+                $_.FriendlyName -match "audio|sound|speaker|headphone" 
+            } | Select-Object -ExpandProperty FriendlyName
+        ')
+        
+        if [[ -n "$pnp_devices" ]]; then
+            echo "$pnp_devices" | while read -r device; do
+                [[ -n "$device" ]] && print_status ok "$device"
+            done
+        else
+            print_status warn "No se pudieron enumerar dispositivos de reproducción"
+        fi
+    fi
+    
+    # Obtener dispositivos de grabación
+    echo -e "\n  ${CYAN}▸ Dispositivos de grabación:${NC}"
+    local recording_devices
+    recording_devices=$(win_ps '
+        Get-AudioDevice -List | Where-Object { $_.Type -eq "Recording" } | ForEach-Object {
+            "$($_.Name)|$($_.ID)|$($_.Default)"
+        }
+    ')
+    
+    if [[ -n "$recording_devices" ]]; then
+        while IFS='|' read -r name id is_default; do
+            [[ -z "$name" ]] && continue
+            if [[ "$is_default" == "True" ]]; then
+                print_status ok "$name [POR DEFECTO]"
+            else
+                print_status info "$name"
+            fi
+        done <<< "$recording_devices"
+    else
+        print_status warn "No se pudieron enumerar dispositivos de grabación"
+    fi
+}
+
+windows_check_services() {
+    echo -e "\n${BOLD}📡 Verificando servicios de audio...${NC}"
+    print_separator
+    
+    local services=("Audiosrv" "AudioEndpointBuilder" "RpcSs" "MMCSS")
+    local service_names=("Windows Audio" "Audio Endpoint Builder" "Remote Procedure Call" "Multimedia Class Scheduler")
+    
+    for i in "${!services[@]}"; do
+        local svc="${services[$i]}"
+        local svc_name="${service_names[$i]}"
+        local status
+        status=$(win_ps "(Get-Service -Name '$svc' -ErrorAction SilentlyContinue).Status")
+        
+        if [[ "$status" == "Running" ]]; then
+            print_status ok "$svc_name: Ejecutándose"
+        elif [[ -n "$status" ]]; then
+            print_status warn "$svc_name: $status"
+            NEEDS_REPAIR=true
+        else
+            print_status err "$svc_name: No encontrado"
+            NEEDS_REPAIR=true
+        fi
+    done
+}
+
+windows_check_volume() {
+    echo -e "\n${BOLD}🔊 Verificando volumen...${NC}"
+    print_separator
+    
+    # Obtener volumen con AudioDevice cmdlets o método alternativo
+    local volume_info
+    volume_info=$(win_ps '
+        $defaultDevice = Get-AudioDevice -Playback | Where-Object { $_.Default -eq $true }
+        if ($defaultDevice) {
+            Write-Output "Device: $($defaultDevice.Name)"
+            Write-Output "Volume: $($defaultDevice.Volume)"
+            Write-Output "Muted: $($defaultDevice.Muted)"
+        } else {
+            Write-Output "NoDefault"
+        }
+    ')
+    
+    if [[ "$volume_info" == "NoDefault" ]]; then
+        print_status err "No hay dispositivo de reproducción por defecto"
+        NEEDS_REPAIR=true
+        return
+    fi
+    
+    local device_name=$(echo "$volume_info" | grep "^Device:" | cut -d: -f2- | xargs)
+    local volume=$(echo "$volume_info" | grep "^Volume:" | cut -d: -f2- | xargs)
+    local muted=$(echo "$volume_info" | grep "^Muted:" | cut -d: -f2- | xargs)
+    
+    [[ -n "$device_name" ]] && print_status info "Dispositivo: $device_name"
+    [[ -n "$volume" ]] && print_status info "Volumen: ${volume}%"
+    
+    if [[ "$muted" == "True" ]]; then
+        print_status err "Audio SILENCIADO"
+        NEEDS_REPAIR=true
+    elif [[ -n "$muted" ]]; then
+        print_status ok "Audio no silenciado"
+    fi
+    
+    if [[ -n "$volume" ]]; then
+        if [[ "$volume" -eq 0 ]]; then
+            print_status warn "Volumen al mínimo"
+        elif [[ "$volume" -lt 25 ]]; then
+            print_status warn "Volumen muy bajo"
+        fi
+    fi
+}
+
+windows_check_drivers() {
+    echo -e "\n${BOLD}📦 Verificando controladores de audio...${NC}"
+    print_separator
+    
+    local drivers
+    drivers=$(win_ps '
+        Get-WmiObject Win32_SoundDevice | ForEach-Object {
+            "$($_.Name)|$($_.Status)|$($_.StatusInfo)"
+        }
+    ')
+    
+    if [[ -z "$drivers" ]]; then
+        print_status warn "No se pudieron obtener controladores"
+        return
+    fi
+    
+    while IFS='|' read -r name status status_info; do
+        [[ -z "$name" ]] && continue
+        print_status info "Controlador: $name"
+        if [[ "$status" == "OK" ]]; then
+            print_status ok "  └─ Estado: OK"
+        else
+            print_status warn "  └─ Estado: $status"
+            NEEDS_REPAIR=true
+        fi
+    done <<< "$drivers"
+}
+
+windows_audio_test() {
+    echo -e "\n${BOLD}🔔 TEST DE SONIDO${NC}"
+    print_separator
+    
+    local test_passed=false
+    
+    # Método 1: Beep del sistema
+    echo -e "  ${BLUE}▶ Método 1: Beep del sistema${NC}"
+    if win_ps "[console]::Beep(440, 1000)" 2>/dev/null; then
+        print_status ok "Beep ejecutado (puede no sonar si está deshabilitado)"
+        # Nota: El beep de consola puede no usar el dispositivo de audio
+    fi
+    
+    # Método 2: Reproducir sonido del sistema con PowerShell
+    echo -e "  ${BLUE}▶ Método 2: Sonido del sistema via .NET${NC}"
+    if win_ps '
+        Add-Type -AssemblyName System.Windows.Forms
+        try {
+            System.Windows.Forms.SystemSounds.Beep.Play()
+            Write-Output "OK"
+        } catch {
+            Write-Output "ERROR"
+        }
+    ' | grep -q "OK"; then
+        print_status ok "Sonido del sistema reproducido"
+        test_passed=true
+    else
+        print_status warn "No se pudo reproducir sonido del sistema"
+    fi
+    
+    # Método 3: Reproducir WAV con MediaPlayer
+    if ! $test_passed; then
+        echo -e "  ${BLUE}▶ Método 3: Reproducir WAV con Windows Media Player${NC}"
+        
+        # Buscar un archivo WAV del sistema
+        local wav_file
+        wav_file=$(win_ps '
+            $paths = @(
+                "C:\Windows\Media\chimes.wav",
+                "C:\Windows\Media\chord.wav",
+                "C:\Windows\Media\ding.wav",
+                "C:\Windows\Media\notify.wav",
+                "C:\Windows\Media\Windows Notify.wav"
+            )
+            foreach ($p in $paths) {
+                if (Test-Path $p) { Write-Output $p; break }
+            }
+        ')
+        
+        if [[ -n "$wav_file" ]]; then
+            if win_ps "
+                Add-Type -AssemblyName presentationCore
+                \$player = New-Object System.Media.SoundPlayer('$wav_file')
+                \$player.PlaySync()
+            " 2>/dev/null; then
+                print_status ok "WAV reproducido: $wav_file"
+                test_passed=true
+            else
+                print_status warn "Error al reproducir WAV"
+            fi
+        else
+            print_status warn "No se encontraron archivos WAV del sistema"
+        fi
+    fi
+    
+    # Método 4: Usar SAPI para TTS
+    if ! $test_passed; then
+        echo -e "  ${BLUE}▶ Método 4: Text-to-Speech${NC}"
+        if win_ps '
+            Add-Type -AssemblyName System.Speech
+            \$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+            try {
+                \$synth.Speak("Test")
+                Write-Output "OK"
+            } catch {
+                Write-Output "ERROR"
+            }
+        ' | grep -q "OK"; then
+            print_status ok "TTS ejecutado sin errores"
+            test_passed=true
+        else
+            print_status warn "TTS reportó errores"
+        fi
+    fi
+    
+    echo
+    if $test_passed; then
+        print_status ok "TEST SUPERADO"
+        print_status info "Si no escuchaste nada, verifica volumen y conexiones"
+    else
+        print_status err "TEST FALLIDO"
+        NEEDS_REPAIR=true
+    fi
+}
+
+windows_audio_repair() {
+    echo -e "\n${BOLD}🔧 REPARACIÓN DE AUDIO${NC}"
+    print_separator
+    
+    REPAIR_AVAILABLE=true
+    local repairs_done=0
+    
+    # --- Reparación 1: Desmutear ---
+    echo -e "\n  ${CYAN}▸ Desmutear audio${NC}"
+    if win_ps '
+        $device = Get-AudioDevice -Playback | Where-Object { $_.Default -eq $true }
+        if ($device -and $device.Muted) {
+            Set-AudioDevice -ID $device.ID -Mute $false
+            Write-Output "OK"
+        } elseif ($device) {
+            Write-Output "ALREADY_UNMUTED"
+        } else {
+            Write-Output "NO_DEVICE"
+        }
+    ' | grep -q "OK"; then
+        print_status ok "Audio desmuteado"
+        ((repairs_done++))
+    else
+        print_status info "No se pudo desmutear o ya estaba desmuteado"
+    fi
+    
+    # --- Reparación 2: Ajustar volumen ---
+    echo -e "\n  ${CYAN}▸ Ajustar volumen al 75%${NC}"
+    if win_ps '
+        $device = Get-AudioDevice -Playback | Where-Object { $_.Default -eq $true }
+        if ($device) {
+            Set-AudioDevice -ID $device.ID -Volume 75
+            Write-Output "OK"
+        }
+    ' | grep -q "OK"; then
+        print_status ok "Volumen ajustado a 75%"
+        ((repairs_done++))
+    fi
+    
+    # --- Reparación 3: Reiniciar servicios ---
+    echo -e "\n  ${CYAN}▸ Reiniciar servicios de audio${NC}"
+    if ask_yes_no "¿Reiniciar servicios de audio? (requiere administrador)" "n"; then
+        echo -e "  ${YELLOW}Se solicitarán privilegios de administrador...${NC}"
+        
+        # Crear script de reparación
+        win_ps_admin '
+            Restart-Service Audiosrv -Force -ErrorAction SilentlyContinue
+            Restart-Service AudioEndpointBuilder -Force -ErrorAction SilentlyContinue
+            Start-Service Audiosrv -ErrorAction SilentlyContinue
+            Start-Service AudioEndpointBuilder -ErrorAction SilentlyContinue
+        '
+        
+        sleep 2
+        if win_ps "(Get-Service Audiosrv).Status" | grep -q "Running"; then
+            print_status ok "Servicios de audio reiniciados"
+            ((repairs_done++))
+        else
+            print_status err "No se pudieron reiniciar los servicios"
+        fi
+    else
+        print_status info "Omitido por usuario"
+    fi
+    
+    # --- Reparación 4: Reinstalar controladores ---
+    echo -e "\n  ${CYAN}▸ Reinstalar controladores de audio${NC}"
+    if ask_yes_no "¿Reinstalar controladores? (requiere administrador)" "n"; then
+        echo -e "  ${YELLOW}Esto reinstalará los controladores de audio...${NC}"
+        
+        win_ps_admin '
+            # Obtener dispositivos de audio con problemas
+            $devices = Get-PnpDevice -Class "MEDIA" | Where-Object { $_.Status -ne "OK" }
+            foreach ($dev in $devices) {
+                pnputil /remove-device "$($dev.InstanceId)"
+            }
+            # Rescanear hardware
+            pnputil /scan-devices
+        '
+        
+        sleep 3
+        print_status ok "Rescan de hardware completado"
+        ((repairs_done++))
+    else
+        print_status info "Omitido por usuario"
+    fi
+    
+    # --- Reparación 5: Ejecutar solucionador de problemas ---
+    echo -e "\n  ${CYAN}▸ Solucionador de problemas de Windows${NC}"
+    if ask_yes_no "¿Ejecutar solucionador de problemas de audio?" "n"; then
+        print_status info "Iniciando solucionador..."
+        win_ps_admin '
+            # Intentar ejecutar el solucionador de problemas de audio
+            $tspath = "C:\Windows\System32\msdt.exe"
+            if (Test-Path $tspath) {
+                Start-Process $tspath -ArgumentList "-id PlayingAudio -diag" -Wait
+            }
+        '
+        print_status ok "Solucionador ejecutado"
+        ((repairs_done++))
+    else
+        print_status info "Omitido por usuario"
+    fi
+    
+    echo
+    print_separator
+    if [[ $repairs_done -gt 0 ]]; then
+        print_status ok "Reparaciones realizadas: $repairs_done"
+    else
+        print_status info "No se realizaron reparaciones"
+    fi
+    print_separator
+}
+
+windows_audio_menu() {
+    while true; do
+        echo -e "\n${BOLD}${MAGENTA}═══════════════════════════════════════${NC}"
+        echo -e "${BOLD}     🔊 DIAGNÓSTICO DE AUDIO - WINDOWS${NC}"
+        echo -e "${BOLD}${MAGENTA}═══════════════════════════════════════${NC}"
+        echo -e "  ${GREEN}1${NC} │ 📋 Diagnóstico completo"
+        echo -e "  ${GREEN}2${NC} │ 🔔 Test de sonido"
+        echo -e "  ${GREEN}3${NC} │ 🔧 Reparación"
+        echo -e "  ${GREEN}4${NC} │ 🚀 Diagnóstico + Test + Reparación automática"
+        echo -e "  ${YELLOW}0${NC} │ ↩️  Volver"
+        echo -e "${BOLD}${MAGENTA}═══════════════════════════════════════${NC}"
+        echo -en "  ${CYAN}Selecciona una opción: ${NC}"
+        
+        read -r option
+        
+        case "$option" in
+            1)
+                AUDIO_ERRORS=0; AUDIO_WARNINGS=0; AUDIO_OK=0; NEEDS_REPAIR=false
+                windows_detect_devices
+                windows_check_services
+                windows_check_volume
+                windows_check_drivers
+                show_summary
+                ;;
+            2)
+                windows_check_volume
+                windows_audio_test
+                ;;
+            3)
+                windows_audio_repair
+                ;;
+            4)
+                AUDIO_ERRORS=0; AUDIO_WARNINGS=0; AUDIO_OK=0; NEEDS_REPAIR=false
+                windows_detect_devices
+                windows_check_services
+                windows_check_volume
+                windows_check_drivers
+                windows_audio_test
+                if [[ $NEEDS_REPAIR == true ]]; then
+                    echo
+                    if ask_yes_no "¿Deseas intentar reparar automáticamente?" "y"; then
+                        windows_audio_repair
+                    fi
+                fi
+                show_summary
+                ;;
+            0)
+                return 0
+                ;;
+            *)
+                echo -e "  ${RED}Opción no válida${NC}"
+                ;;
+        esac
+    done
+}
+
+# ============================================
+#          MENÚ PRINCIPAL
+# ============================================
+
+detect_os() {
+    case "$OSTYPE" in
+        linux-gnu*)   echo "linux" ;;
+        darwin*)      echo "mac" ;;
+        msys*|cygwin*|win32) echo "windows" ;;
+        *)            echo "unknown" ;;
+    esac
+}
+
+main() {
+    local os=$(detect_os)
+    
+    title "🔊 DIAGNÓSTICO DE AUDIO MULTIPLATAFORMA"
+    echo -e "  ${BLUE}Sistema detectado: ${BOLD}$(uname -s)${NC}"
+    echo -e "  ${BLUE}Plataforma: ${BOLD}$os${NC}"
+    separator
+    
+    case "$os" in
+        linux)
+            if ! command -v pactl &>/dev/null && ! command -v aplay &>/dev/null; then
+                echo -e "  ${RED}❌ No se encontraron herramientas de audio (pactl/aplay)${NC}"
+                echo -e "  ${YELLOW}Instala: pulseaudio-utils o pipewire-pulse${NC}"
+                exit 1
+            fi
+            linux_audio_menu
+            ;;
+        mac)
+            if ! command -v osascript &>/dev/null; then
+                echo -e "  ${RED}❌ osascript no disponible${NC}"
+                exit 1
+            fi
+            mac_audio_menu
+            ;;
+        windows)
+            if ! command -v powershell.exe &>/dev/null; then
+                echo -e "  ${RED}❌ PowerShell no disponible${NC}"
+                exit 1
+            fi
+            # Verificar módulo AudioDevice
+            if ! win_ps "Get-Command Get-AudioDevice -ErrorAction SilentlyContinue" &>/dev/null; then
+                echo -e "  ${YELLOW}⚠️  Módulo AudioDevice no instalado${NC}"
+                echo -e "  ${YELLOW}Instala con: Install-Module AudioDevice -Scope CurrentUser${NC}"
+                echo -e "  ${YELLOW}Continuando con métodos alternativos...${NC}"
+                echo
+            fi
+            windows_audio_menu
+            ;;
+        *)
+            echo -e "  ${RED}❌ Sistema operativo no soportado: $OSTYPE${NC}"
+            exit 1
+            ;;
+    esac
+    
+    ok "Módulo de audio finalizado"
+}
+
+# Ejecutar si se llama directamente
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main
+fi

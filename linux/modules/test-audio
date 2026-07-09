@@ -3,128 +3,449 @@
 BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 source "$BASE/lib/ui"
 
-title "🔊 Prueba de Audio"
+# ============================================
+#   DIAGNÓSTICO SEGURO DE AUDIO - V2
+#   (NO toca dbus, NO reinicia servicios críticos)
+# ============================================
 
-echo -e "${BLUE}🔍 Verificando sistema de audio...${RESET}"
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+DIM='\033[2m'
+NC='\033[0m'
+
+title "🔊 DIAGNÓSTICO SEGURO DE AUDIO v2"
 separator
 
-# 1. Servidor de audio
-echo "1️⃣ Servidor de audio:"
-if pactl info 2>/dev/null | grep -q "PipeWire"; then
-    echo -e "  ${GREEN}✅ PipeWire activo${NC}"
-else
-    echo -e "  ${YELLOW}⚠️  Otro servidor de audio en uso${NC}"
-fi
-pactl info | grep "Server Name"
-echo
+print_ok()   { echo -e "  ${GREEN}✅ $1${NC}"; }
+print_warn() { echo -e "  ${YELLOW}⚠️  $1${NC}"; }
+print_err()  { echo -e "  ${RED}❌ $1${NC}"; }
+print_info() { echo -e "  ${BLUE}ℹ️  $1${NC}"; }
 
-# 2. Dispositivos de audio
-echo "2️⃣ Dispositivos de audio:"
-pactl list short sinks | while read line; do
-    NAME=$(echo "$line" | awk '{print $2}')
-    if echo "$line" | grep -q "RUNNING"; then
-        echo -e "  ${GREEN}✅ $NAME (activo)${NC}"
-    else
-        echo -e "  ${YELLOW}⚠️  $NAME (inactivo)${NC}"
-    fi
-done
-echo
+# ============================================
+# DETECCIÓN CORREGIDA
+# ============================================
 
-# 3. Detectar y configurar sink por defecto
-echo "3️⃣ Configurando dispositivo por defecto..."
-
-# Verificar si hay un sink por defecto
-DEFAULT_SINK=$(pactl info 2>/dev/null | grep "Default Sink" | awk '{print $3}')
-
-if [ -z "$DEFAULT_SINK" ] || [ "$DEFAULT_SINK" = "" ]; then
-    echo -e "  ${YELLOW}⚠️  No hay sink por defecto, configurando...${NC}"
+# Esta función reemplaza la detección original que fallaba
+check_audio_server() {
+    echo -e "\n${BOLD}📡 Servidor de audio:${NC}"
+    echo -e "  ${DIM}────────────────────────────────────────${NC}"
     
-    # Buscar sinks disponibles
-    SINKS=$(pactl list short sinks 2>/dev/null)
-    if [ -n "$SINKS" ]; then
-        # Priorizar HDMI si existe
-        if echo "$SINKS" | grep -q "hdmi"; then
-            DEFAULT_SINK=$(echo "$SINKS" | grep "hdmi" | head -1 | awk '{print $2}')
-            echo -e "  ${GREEN}✅ Configurando HDMI como por defecto${NC}"
-        else
-            DEFAULT_SINK=$(echo "$SINKS" | head -1 | awk '{print $2}')
-            echo -e "  ${GREEN}✅ Configurando primer sink disponible${NC}"
-        fi
-        pactl set-default-sink "$DEFAULT_SINK" 2>/dev/null
-    else
-        echo -e "  ${RED}❌ No se encontraron sinks de audio${NC}"
-        exit 1
-    fi
-else
-    echo -e "  ${GREEN}✅ Sink por defecto: $DEFAULT_SINK${NC}"
-fi
-echo
-
-# 4. Aplicaciones con audio
-echo "4️⃣ Aplicaciones reproduciendo audio:"
-SINK_INPUTS=$(pactl list short sink-inputs 2>/dev/null)
-if [ -n "$SINK_INPUTS" ]; then
-    echo "$SINK_INPUTS" | while read line; do
-        if echo "$line" | grep -q "RUNNING"; then
-            echo "  ✅ Audio activo"
-        fi
-    done
-    echo "  📊 Total: $(echo "$SINK_INPUTS" | wc -l) flujo(s) de audio"
-else
-    echo -e "  ${YELLOW}⏸️  No hay audio reproduciéndose${NC}"
-fi
-echo
-
-# 5. Prueba de sonido
-echo "5️⃣ Prueba de sonido:"
-if [ -n "$DEFAULT_SINK" ]; then
-    echo -e "  ${YELLOW}Reproduciendo tono de prueba...${NC}"
+    local pipewire_running=false
+    local pipewire_pulse_running=false
+    local wireplumber_running=false
+    local pulseaudio_running=false
     
-    # Intentar con speaker-test
-    if speaker-test -t sine -f 440 -c 2 -D "$DEFAULT_SINK" 2>/dev/null &
-    then
-        PID=$!
-        sleep 2
-        kill $PID 2>/dev/null
-        echo -e "  ${GREEN}✅ Prueba completada${NC}"
+    # Verificar con pgrep -x (exact match) - el bug original era aquí
+    if pgrep -x "pipewire" >/dev/null 2>&1; then
+        pipewire_running=true
+        local pw_pid=$(pgrep -x "pipewire" | head -1)
+        print_ok "PipeWire: EJECUTÁNDOSE (PID: $pw_pid)"
     else
-        # Intentar con aplay
-        if command -v aplay &>/dev/null; then
-            echo -e "  ${YELLOW}Intentando con aplay...${NC}"
-            # Crear tono simple
-            dd if=/dev/zero bs=8000 count=200 2>/dev/null | aplay -q 2>/dev/null &
-            PID=$!
-            sleep 1
-            kill $PID 2>/dev/null
-            echo -e "  ${GREEN}✅ Prueba completada${NC}"
+        print_err "PipeWire: NO está corriendo"
+    fi
+    
+    # pipewire-pulse puede aparecer como "pipewire" con argumentos
+    # Verificamos de dos formas
+    if pgrep -f "pipewire-pulse" >/dev/null 2>&1; then
+        pipewire_pulse_running=true
+        local pwp_pid=$(pgrep -f "pipewire-pulse" | head -1)
+        print_ok "PipeWire-Pulse: EJECUTÁNDOSE (PID: $pwp_pid)"
+    elif pgrep -x "pipewire-pulse" >/dev/null 2>&1; then
+        pipewire_pulse_running=true
+        print_ok "PipeWire-Pulse: EJECUTÁNDOSE"
+    else
+        # Verificar si el socket pulse existe (indicador confiable)
+        if [[ -S "/run/user/$(id -u)/pulse/native" ]]; then
+            pipewire_pulse_running=true
+            print_ok "PipeWire-Pulse: activo (verificado por socket)"
         else
-            echo -e "  ${YELLOW}⚠️  No se pudo realizar prueba automatizada${NC}"
+            print_err "PipeWire-Pulse: NO está corriendo"
         fi
     fi
-else
-    echo -e "  ${RED}❌ No hay sink por defecto para probar${NC}"
-fi
-echo
-
-# 6. Verificación final
-echo "📊 Verificación final:"
-separator
-
-# Verificar si el audio funciona
-if pactl list short sink-inputs 2>/dev/null | grep -q "RUNNING"; then
-    echo -e "  ${GREEN}✅ Audio funcionando correctamente${NC}"
-    echo "  🔊 Aplicaciones activas:"
-    pactl list short sink-inputs 2>/dev/null | while read line; do
-        if echo "$line" | grep -q "RUNNING"; then
-            echo "    • $(echo "$line" | awk '{print $2}')"
+    
+    if pgrep -x "wireplumber" >/dev/null 2>&1; then
+        wireplumber_running=true
+        print_ok "WirePlumber: EJECUTÁNDOSE"
+    else
+        print_warn "WirePlumber: NO está corriendo (gestor de sesión)"
+    fi
+    
+    # PulseAudio NATIVO (no debe correr si usas PipeWire)
+    if pgrep -x "pulseaudio" >/dev/null 2>&1; then
+        pulseaudio_running=true
+        print_warn "PulseAudio NATIVO: corriendo (puede causar conflictos)"
+    else
+        print_ok "PulseAudio nativo: no corriendo (correcto)"
+    fi
+    
+    # Verificar sockets
+    echo
+    echo -e "  ${BOLD}Sockets:${NC}"
+    
+    local runtime="/run/user/$(id -u)"
+    
+    if [[ -S "$runtime/pipewire-0" ]]; then
+        print_ok "pipewire-0: existe"
+    else
+        print_err "pipewire-0: NO existe"
+    fi
+    
+    if [[ -S "$runtime/pipewire-pulse-0" ]]; then
+        print_ok "pipewire-pulse-0: existe"
+    else
+        # Este socket a veces no existe pero pulse/native sí funciona
+        if [[ -S "$runtime/pulse/native" ]]; then
+            print_info "pipewire-pulse-0: no existe, pero pulse/native sí (OK)"
+        else
+            print_err "pipewire-pulse-0: NO existe"
         fi
-    done
-elif [ -n "$DEFAULT_SINK" ]; then
-    echo -e "  ${GREEN}✅ Sistema de audio configurado correctamente${NC}"
-    echo -e "  ${YELLOW}💡 Abre YouTube para probar el audio${NC}"
-else
-    echo -e "  ${RED}❌ Sistema de audio con problemas${NC}"
-fi
+    fi
+    
+    if [[ -S "$runtime/pulse/native" ]]; then
+        print_ok "pulse/native: existe"
+    else
+        print_err "pulse/native: NO existe"
+    fi
+    
+    # Resultado final
+    echo
+    echo -e "  ${DIM}────────────────────────────────────────${NC}"
+    if $pipewire_running && $pipewire_pulse_running; then
+        echo -e "  ${GREEN}${BOLD}🎉 RESULTADO: El servidor de audio está FUNCIONANDO${NC}"
+        return 0
+    else
+        echo -e "  ${RED}${BOLD}⚠️  RESULTADO: El servidor de audio tiene problemas${NC}"
+        return 1
+    fi
+}
 
-echo
-ok "Prueba de audio completada"
+# ============================================
+# VERIFICAR DISPOSITIVOS (CORREGIDA)
+# ============================================
+
+check_devices() {
+    echo -e "\n${BOLD}🔊 Dispositivos de audio:${NC}"
+    echo -e "  ${DIM}────────────────────────────────────────${NC}"
+    
+    # Verificar si pactl puede conectar
+    if ! pactl info >/dev/null 2>&1; then
+        print_err "pactl no puede conectar al servidor"
+        print_info "Esto normalmente significa que pipewire-pulse no está listo"
+        return 1
+    fi
+    
+    # Servidor
+    local server_name=$(pactl info 2>/dev/null | grep "Server Name" | cut -d: -f2 | xargs)
+    print_info "Servidor: $server_name"
+    
+    # Sink por defecto
+    local default_sink=$(pactl info 2>/dev/null | grep "Default Sink" | awk '{print $3}')
+    if [[ -n "$default_sink" ]]; then
+        print_ok "Sink por defecto: $default_sink"
+    else
+        print_err "No hay sink por defecto"
+    fi
+    
+    # Listar sinks
+    echo
+    echo -e "  ${BOLD}Dispositivos de SALIDA:${NC}"
+    local sinks=$(pactl list short sinks 2>/dev/null)
+    if [[ -n "$sinks" ]]; then
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            local sink_id=$(echo "$line" | awk '{print $1}')
+            local sink_name=$(echo "$line" | awk '{print $2}')
+            local sink_desc=$(pactl list sinks 2>/dev/null | grep -A15 "Sink #$sink_id" | grep "Description:" | sed 's/.*: //' | xargs)
+            local sink_state=$(pactl list sinks 2>/dev/null | grep -A15 "Sink #$sink_id" | grep "State:" | awk '{print $2}')
+            local sink_vol=$(pactl list sinks 2>/dev/null | grep -A15 "Sink #$sink_id" | grep "Volume:" | head -1 | grep -oP '\d+(?=%)' | head -1)
+            local sink_mute=$(pactl list sinks 2>/dev/null | grep -A15 "Sink #$sink_id" | grep "Mute:" | awk '{print $2}')
+            
+            echo
+            if [[ "$sink_name" == "$default_sink" ]]; then
+                print_ok "$sink_desc [POR DEFECTO]"
+            else
+                print_info "$sink_desc"
+            fi
+            print_info "   Estado: $sink_state | Volumen: ${sink_vol}%"
+            if [[ "$sink_mute" == "yes" ]]; then
+                print_warn "   🔇 SILENCIADO"
+            fi
+        done <<< "$sinks"
+    else
+        print_warn "No se encontraron dispositivos de salida"
+    fi
+    
+    # Listar sources
+    echo
+    echo -e "  ${BOLD}Dispositivos de ENTRADA:${NC}"
+    local sources=$(pactl list short sources 2>/dev/null)
+    if [[ -n "$sources" ]]; then
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            local source_name=$(echo "$line" | awk '{print $2}')
+            # Skip monitor sources
+            [[ "$source_name" =~ .*monitor.* ]] && continue
+            
+            local source_id=$(echo "$line" | awk '{print $1}')
+            local source_desc=$(pactl list sources 2>/dev/null | grep -A15 "Source #$source_id" | grep "Description:" | sed 's/.*: //' | xargs)
+            local source_mute=$(pactl list sources 2>/dev/null | grep -A15 "Source #$source_id" | grep "Mute:" | awk '{print $2}')
+            
+            if [[ "$source_mute" == "yes" ]]; then
+                print_warn "$source_desc (silenciado)"
+            else
+                print_ok "$source_desc"
+            fi
+        done <<< "$sources"
+    else
+        print_warn "No se encontraron dispositivos de entrada"
+    fi
+}
+
+# ============================================
+# VERIFICAR PERMISOS (CORREGIDA)
+# ============================================
+
+check_permissions() {
+    echo -e "\n${BOLD}🔐 Permisos:${NC}"
+    echo -e "  ${DIM}────────────────────────────────────────${NC}"
+    
+    # Grupo audio
+    if groups | grep -q '\baudio\b'; then
+        print_ok "Usuario '$USER' está en el grupo 'audio'"
+    else
+        print_err "Usuario '$USER' NO está en el grupo 'audio'"
+    fi
+    
+    # Verificar acceso REAL a dispositivos (no solo al directorio)
+    if [[ -d /dev/snd ]]; then
+        local can_access=true
+        local cant_access=()
+        
+        for dev in /dev/snd/pcm* /dev/snd/control*; do
+            [[ -e "$dev" ]] || continue
+            if [[ ! -r "$dev" ]] || [[ ! -w "$dev" ]]; then
+                can_access=false
+                cant_access+=("$(basename "$dev")")
+            fi
+        done
+        
+        if $can_access; then
+            print_ok "Acceso de lectura/escritura a dispositivos ALSA"
+        else
+            print_err "Sin acceso a: ${cant_access[*]}"
+            echo
+            print_info "Permisos actuales:"
+            ls -la /dev/snd/ 2>/dev/null | grep -E "pcm|control" | while read -r line; do
+                echo -e "    ${DIM}$line${NC}"
+            done
+        fi
+    else
+        print_err "/dev/snd no existe"
+    fi
+}
+
+# ============================================
+# ANALIZAR ERRORES EN LOGS
+# ============================================
+
+check_logs() {
+    echo -e "\n${BOLD}📋 Análisis de logs:${NC}"
+    echo -e "  ${DIM}────────────────────────────────────────${NC}"
+    
+    if ! command -v journalctl &>/dev/null; then
+        print_warn "journalctl no disponible"
+        return
+    fi
+    
+    # Error "file already exists" - EXPLICAR que no es grave
+    local duplicate_errors=$(journalctl --user -t pipewire --since "30 minutes ago" --no-pager 2>/dev/null | grep -c "El archivo ya existe" || true)
+    
+    if [[ $duplicate_errors -gt 0 ]]; then
+        echo
+        print_warn "Se encontraron $duplicate_errors errores 'El archivo ya existe'"
+        print_info "📝 EXPLICACIÓN: Esto significa que algo intentó iniciar"
+        print_info "   PipeWire cuando YA estaba corriendo. No es un error"
+        print_info "   de audio real, es un error de duplicación de proceso."
+        print_info "   Causa común: scripts que inician servicios manualmente."
+        echo
+    fi
+    
+    # Buscar errores REALES
+    local real_errors=$(journalctl --user --since "30 minutes ago" --no-pager -p err 2>/dev/null | \
+        grep -E "pipewire|wireplumber" | \
+        grep -v "El archivo ya existe" | \
+        grep -v "could not load mandatory module" | \
+        head -5)
+    
+    if [[ -n "$real_errors" ]]; then
+        print_err "Errores reales encontrados:"
+        echo "$real_errors" | while read -r line; do
+            echo -e "    ${DIM}$line${NC}"
+        done
+    else
+        print_ok "No se encontraron errores REALES de audio"
+    fi
+}
+
+# ============================================
+# APLICACIONES USANDO AUDIO
+# ============================================
+
+check_applications() {
+    echo -e "\n${BOLD}🎵 Aplicaciones con audio:${NC}"
+    echo -e "  ${DIM}────────────────────────────────────────${NC}"
+    
+    local inputs=$(pactl list short sink-inputs 2>/dev/null)
+    
+    if [[ -z "$inputs" ]]; then
+        print_info "No hay aplicaciones reproduciendo audio ahora mismo"
+        print_info "(Abre YouTube para probar)"
+        return
+    fi
+    
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local input_id=$(echo "$line" | awk '{print $1}')
+        local app_name=$(pactl list sink-inputs 2>/dev/null | grep -A20 "Sink Input #$input_id" | grep "application.name" | sed 's/.*= "//;s/"//' | xargs)
+        local media_name=$(pactl list sink-inputs 2>/dev/null | grep -A20 "Sink Input #$input_id" | grep "media.name" | sed 's/.*= "//;s/"//' | xargs)
+        
+        print_ok "$app_name"
+        [[ -n "$media_name" ]] && print_info "   Reproduciendo: $media_name"
+    done <<< "$inputs"
+}
+
+# ============================================
+# TEST DE SONIDO SEGURO
+# ============================================
+
+safe_audio_test() {
+    echo -e "\n${BOLD}🔔 Test de sonido:${NC}"
+    echo -e "  ${DIM}────────────────────────────────────────${NC}"
+    
+    # Verificar que hay sink disponible
+    local default_sink=$(pactl info 2>/dev/null | grep "Default Sink" | awk '{print $3}')
+    
+    if [[ -z "$default_sink" ]]; then
+        print_err "No hay sink por defecto - no se puede hacer test"
+        return 1
+    fi
+    
+    print_info "Usando sink: $default_sink"
+    echo
+    echo -en "  ${CYAN}¿Ejecutar test de sonido? (escucharás un tono) [y/N]: ${NC}"
+    read -r resp
+    
+    if [[ ! "$resp" =~ ^[Yy]$ ]]; then
+        print_info "Test omitido"
+        return 0
+    fi
+    
+    print_info "Reproduciendo tono 440Hz por 2 segundos..."
+    
+    local test_ok=false
+    
+    # Método 1: speaker-test
+    if command -v speaker-test &>/dev/null; then
+        if timeout 2 speaker-test -t sine -f 440 -c 2 -l 1 >/dev/null 2>&1; then
+            print_ok "speaker-test: completado sin errores"
+            test_ok=true
+        else
+            print_warn "speaker-test: reportó errores"
+        fi
+    fi
+    
+    # Método 2: paplay con tono generado
+    if ! $test_ok && command -v paplay &>/dev/null && command -v sox &>/dev/null; then
+        local tmp="/tmp/test_tone_$$.wav"
+        if sox -n -r 44100 -c 1 "$tmp" synth 2 sine 440 2>/dev/null; then
+            if paplay "$tmp" 2>/dev/null; then
+                print_ok "paplay: completado sin errores"
+                test_ok=true
+            fi
+            rm -f "$tmp"
+        fi
+    fi
+    
+    echo
+    if $test_ok; then
+        print_ok "TEST EJECUTADO - ¿Escuchaste el tono?"
+    else
+        print_warn "No se pudo ejecutar el test automáticamente"
+        print_info "Prueba manualmente: abre YouTube"
+    fi
+}
+
+# ============================================
+# RESUMEN
+# ============================================
+
+print_summary() {
+    echo
+    echo -e "${BOLD}${MAGENTA}════════════════════════════════════════════${NC}"
+    echo -e "${BOLD}${MAGENTA}  📊 RESUMEN${NC}"
+    echo -e "${BOLD}${MAGENTA}════════════════════════════════════════════${NC}"
+    
+    # Determinar estado general
+    local server_ok=false
+    local devices_ok=false
+    local perms_ok=false
+    
+    pgrep -x "pipewire" >/dev/null 2>&1 && pgrep -f "pipewire-pulse" >/dev/null 2>&1 && server_ok=true
+    pactl info >/dev/null 2>&1 && [[ -n $(pactl info 2>/dev/null | grep "Default Sink") ]] && devices_ok=true
+    groups | grep -q '\baudio\b' && perms_ok=true
+    
+    if $server_ok && $devices_ok && $perms_ok; then
+        echo -e "  ${GREEN}${BOLD}🎉 ESTADO: AUDIO FUNCIONAL${NC}"
+        echo
+        echo -e "  ${GREEN}• Servidor de audio: activo${NC}"
+        echo -e "  ${GREEN}• Dispositivos: detectados${NC}"
+        echo -e "  ${GREEN}• Permisos: correctos${NC}"
+        echo
+        echo -e "  ${CYAN}💡 Si no escuchas audio, verifica:${NC}"
+        echo -e "     1. Volumen del sistema no esté al mínimo"
+        echo -e "     2. La aplicación no esté silenciada"
+        echo -e "     3. El dispositivo de salida correcto esté seleccionado"
+        echo -e "     4. Los altavoces/auriculares estén conectados"
+    else
+        echo -e "  ${YELLOW}${BOLD}⚠️  ESTADO: REQUIERE ATENCIÓN${NC}"
+        echo
+        $server_ok || echo -e "  ${RED}• Servidor de audio: problema${NC}"
+        $devices_ok || echo -e "  ${RED}• Dispositivos: problema${NC}"
+        $perms_ok || echo -e "  ${RED}• Permisos: problema${NC}"
+        echo
+        echo -e "  ${CYAN}💡 Solución recomendada:${NC}"
+        echo -e "     systemctl --user restart pipewire pipewire-pulse wireplumber"
+    fi
+    
+    echo -e "${BOLD}${MAGENTA}════════════════════════════════════════════${NC}"
+}
+
+# ============================================
+# EJECUCIÓN
+# ============================================
+
+main() {
+    echo -e "  ${BLUE}Sistema: $(uname -s) $(uname -r)${NC}"
+    echo -e "  ${BLUE}Usuario: $USER ($(id -u))${NC}"
+    echo -e "  ${BLUE}Fecha: $(date '+%Y-%m-%d %H:%M:%S')${NC}"
+    separator
+    
+    # Ejecutar checks
+    check_audio_server
+    check_devices
+    check_permissions
+    check_logs
+    check_applications
+    safe_audio_test
+    print_summary
+    
+    echo
+    ok "Diagnóstico seguro completado"
+    echo
+}
+
+main

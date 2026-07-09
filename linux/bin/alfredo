@@ -56,8 +56,8 @@ print_two_columns() {
         
         # Imprimir en dos columnas
         if [ -n "$name1" ] && [ -n "$name2" ]; then
-            printf "  ${GREEN}▶${RESET} ${BOLD}%-18s${RESET} %-25s  ${GREEN}▶${RESET} ${BOLD}%-18s${RESET} %s\n" \
-                "$name1" "${desc1:0:25}" "$name2" "${desc2:0:25}"
+            printf "  ${GREEN}▶${RESET} ${BOLD}%-19s${RESET} %-26s  ${GREEN}▶${RESET} ${BOLD}%-18s${RESET} %s\n" \
+                "$name1" "${desc1:0:26}" "$name2" "${desc2:0:26}"
         elif [ -n "$name1" ]; then
             printf "  ${GREEN}▶${RESET} ${BOLD}%-18s${RESET} %s\n" "$name1" "$desc1"
         fi
@@ -70,18 +70,19 @@ get_description() {
     
     case "$module" in
         # Diagnóstico
-        "diagnostico") desc=" Diagnóstico completo" ;;
+        "diagnostico") desc="Diagnóstico completo" ;;
         "diagnostico-memoria") desc="Diagnóstico RAM" ;;
         "analizar-logs") desc=" Análisis de logs" ;;
         "estado-actual") desc="Estado en tiempo real" ;;
         "verificar-todo") desc="Verificación completa" ;;
+        "smart-diagnostico") desc="S.M.A.R.T. de discos" ;;
         
         # Sistema
         "salud") desc="Estado del sistema" ;;
         "info ") desc="Resumen rápido" ;;
         "procesador") desc="Información del CPU" ;;
         "memoria") desc="Información de RAM" ;;
-        "discos") desc="Información de discos" ;;
+        "discos") desc="Ver los discos.." ;;
         "nvme-status") desc="Estado del NVMe" ;;
         "tiempo-arranque") desc="Tiempo de arranque" ;;
         "ultimo-arranque") desc="Último arranque" ;;
@@ -102,6 +103,7 @@ get_description() {
         "red") desc="Configuración de red" ;;
         "wifi") desc="Información WiFi" ;;
         "speed") desc="Velocidad de Internet" ;;
+        "impresora") desc="Test, reparacion, etc" ;;
         
         # Temperatura
         "temp-cpu") desc="Temperatura CPU" ;;
@@ -170,7 +172,7 @@ show_menu() {
     print_two_columns \
         "diagnostico" "diagnostico-memoria" \
         "analizar-logs" "estado-actual" \
-        "verificar-todo"   
+        "verificar-todo" "smart-diagnostico"  
     # ============================================================
     # CATEGORÍA: SISTEMA
     # ============================================================
@@ -196,7 +198,8 @@ show_menu() {
     print_category "🌐 RED Y CONECTIVIDAD"
     print_two_columns \
         "red" "wifi" \
-        "speed"    
+        "speed" \
+        "impresora"    
     # ============================================================
     # CATEGORÍA: TEMPERATURA
     # ============================================================

@@ -1,0 +1,473 @@
+#!/bin/bash
+
+BASE="${ALFREDO_BASE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$BASE/lib/ui"
+
+title "🖨️  Diagnóstico de Impresoras"
+
+# Verificar si CUPS está instalado
+if ! command -v cups &>/dev/null && ! systemctl list-unit-files | grep -q cups.service; then
+    error "CUPS no está instalado"
+    echo "  Instala con: sudo apt install cups cups-client cups-common -y"
+    exit 1
+fi
+
+# ============================================================
+# FUNCIONES DE DIAGNÓSTICO
+# ============================================================
+
+check_cups_status() {
+    echo -e "${BLUE}📋 Estado de CUPS:${RESET}"
+    
+    if systemctl is-active --quiet cups 2>/dev/null; then
+        echo -e "  ${GREEN}✅ CUPS activo${RESET}"
+        systemctl is-active cups
+		systemctl is-enabled cups
+    else
+        echo -e "  ${RED}❌ CUPS inactivo${RESET}"
+        echo "  🔧 Para activar: sudo systemctl start cups"
+        echo "  🔧 Para habilitar inicio automático: sudo systemctl enable cups"
+    fi
+    echo
+    
+    if systemctl is-enabled cups 2>/dev/null | grep -q "enabled"; then
+        echo -e "  ${GREEN}✅ CUPS habilitado para inicio automático${RESET}"
+    else
+        echo -e "  ${YELLOW}⚠️  CUPS NO está habilitado para inicio automático${RESET}"
+    fi
+    echo
+}
+
+list_printers() {
+    echo -e "${BLUE}🖨️  Impresoras detectadas:${RESET}"
+    
+    if command -v lpstat &>/dev/null; then
+        PRINTERS=$(lpstat -p 2>/dev/null | grep "printer" | awk '{print $2}')
+        if [ -n "$PRINTERS" ]; then
+            echo "  Impresoras instaladas:"
+            echo "$PRINTERS" | while read printer; do
+                STATUS=$(lpstat -p "$printer" 2>/dev/null | grep -E "enabled|disabled" | awk '{print $3}')
+                if [ "$STATUS" = "enabled" ]; then
+                    echo -e "    ${GREEN}✅ $printer (habilitada)${RESET}"
+                elif [ "$STATUS" = "disabled" ]; then
+                    echo -e "    ${RED}❌ $printer (deshabilitada)${RESET}"
+                else
+                    echo "    ⚠️  $printer (estado desconocido)"
+                fi
+            done
+        else
+            echo -e "  ${YELLOW}⚠️  No hay impresoras instaladas${RESET}"
+            echo "  💡 Para buscar impresoras en red: alfredo impresoras (opción 8)"
+        fi
+    else
+        echo "  ℹ️  lpstat no disponible (instala cups-client)"
+    fi
+    echo
+}
+
+check_default_printer() {
+    echo -e "${BLUE}📌 Impresora predeterminada:${RESET}"
+    DEFAULT=$(lpstat -d 2>/dev/null | awk '{print $4}')
+    if [ -n "$DEFAULT" ] && [ "$DEFAULT" != "no" ]; then
+        echo -e "  ${GREEN}✅ $DEFAULT${RESET}"
+    else
+        echo -e "  ${YELLOW}⚠️  No hay impresora predeterminada${RESET}"
+        echo "  🔧 Para configurar: lpoptions -d <nombre_impresora>"
+    fi
+    echo
+}
+
+check_print_jobs() {
+    echo -e "${BLUE}📊 Trabajos de impresión:${RESET}"
+    JOBS=$(lpstat -o 2>/dev/null | head -5)
+    if [ -n "$JOBS" ]; then
+        echo "$JOBS"
+    else
+        echo "  ℹ️  No hay trabajos pendientes"
+    fi
+    echo
+}
+
+diagnose_problems() {
+    echo -e "${BLUE}🔍 Diagnóstico de problemas:${RESET}"
+    
+    PROBLEMS=0
+    
+    if ! systemctl is-active --quiet cups 2>/dev/null; then
+        echo -e "  ${RED}❌ CUPS inactivo${RESET}"
+        PROBLEMS=$((PROBLEMS+1))
+    fi
+    
+    DISABLED=$(lpstat -p 2>/dev/null | grep "disabled" | awk '{print $2}')
+    if [ -n "$DISABLED" ]; then
+        echo -e "  ${RED}❌ Impresoras deshabilitadas:${RESET}"
+        echo "$DISABLED" | while read printer; do
+            echo "    - $printer"
+        done
+        PROBLEMS=$((PROBLEMS+1))
+    fi
+    
+    if [ "$EUID" -eq 0 ]; then
+        echo -e "  ${YELLOW}⚠️  Errores en logs de CUPS:${RESET}"
+        echo "$ERRORS" | sed 's/^/    /'
+        PROBLEMS=$((PROBLEMS+1))
+    fi
+    
+    if [ $PROBLEMS -eq 0 ]; then
+        echo -e "  ${GREEN}✅ No se encontraron problemas${RESET}"
+    else
+        echo -e "  ${YELLOW}⚠️  Se encontraron $PROBLEMS problema(s)${RESET}"
+    fi
+    echo
+}
+
+# ============================================================
+# FUNCIÓN: DETECTAR RED ACTIVA
+# ============================================================
+
+detect_network() {
+    local DEFAULT_IFACE=$(ip route | grep default | awk '{print $5}' | head -1)
+    
+    if [ -n "$DEFAULT_IFACE" ] && [ "$DEFAULT_IFACE" != "lo" ]; then
+        local IP_INFO=$(ip -4 addr show "$DEFAULT_IFACE" 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}/\d+' | head -1)
+        if [ -n "$IP_INFO" ]; then
+            if echo "$IP_INFO" | grep -q "/27"; then
+                local NETWORK=$(echo "$IP_INFO" | sed 's/\.[0-9]*\/27/.0\/24/')
+                echo "$NETWORK"
+                return
+            fi
+            local NETWORK=$(echo "$IP_INFO" | sed 's/\.[0-9]*\//.0\//')
+            echo "$NETWORK"
+            return
+        fi
+    fi
+    
+    local IP_INFO=$(ip -4 addr show | grep -v "lo:" | grep -oP '(?<=inet\s)\d+(\.\d+){3}/\d+' | head -1)
+    if [ -n "$IP_INFO" ]; then
+        local NETWORK=$(echo "$IP_INFO" | sed 's/\.[0-9]*\//.0\//')
+        echo "$NETWORK"
+        return
+    fi
+    
+    echo "192.168.0.0/24"
+}
+
+# ============================================================
+# FUNCIONES PARA BUSCAR IMPRESORAS EN RED
+# ============================================================
+
+buscar_impresoras() {
+    echo -e "${BLUE}🔍 Buscando impresoras en red...${RESET}"
+    
+    NETWORK=$(detect_network)
+    echo "  🌐 Red detectada automáticamente: $NETWORK"
+    
+    echo ""
+    echo -e "${YELLOW}💡 ¿Quieres escanear otra red?${RESET}"
+    echo "  (Ejemplos: 192.168.0.0/24, 10.0.0.0/24, 172.16.0.0/24)"
+    echo "  Presiona Enter para usar la red detectada"
+    read -p "Red a escanear: " USER_NETWORK
+    
+    if [ -n "$USER_NETWORK" ]; then
+        NETWORK="$USER_NETWORK"
+        echo "  🌐 Usando red: $NETWORK"
+    fi
+    
+    if echo "$NETWORK" | grep -q "^127\.0\.0\.0"; then
+        echo -e "  ${YELLOW}⚠️  Red loopback detectada. Usando 192.168.0.0/24${RESET}"
+        NETWORK="192.168.0.0/24"
+    fi
+    
+    echo ""
+    echo "  📡 Escaneando red $NETWORK (esto puede tomar varios minutos)..."
+    
+    FOUND_IPS=""
+    
+    if command -v nmap &>/dev/null; then
+        echo "  🔍 Buscando puertos: 515 (printer), 631 (ipp), 9100 (jetdirect)"
+        
+        SCAN_RESULT=$(nmap -p 515,631,9100 --open "$NETWORK" 2>/dev/null)
+        
+        if echo "$SCAN_RESULT" | grep -q "515\|631\|9100"; then
+            echo ""
+            echo "$SCAN_RESULT" | while read line; do
+                if echo "$line" | grep -q "Nmap scan"; then
+                    IP=$(echo "$line" | grep -oP '\d+(\.\d+){3}')
+                    echo "    📶 IP: $IP"
+                    FOUND_IPS="$FOUND_IPS $IP"
+                elif echo "$line" | grep -q "515\|631\|9100"; then
+                    PORT=$(echo "$line" | awk '{print $1}')
+                    SERVICE=$(echo "$line" | awk '{print $3}')
+                    echo "       Puerto $PORT ($SERVICE) abierto"
+                fi
+            done
+        else
+            echo "    ℹ️  No se encontraron impresoras con nmap en esa red"
+        fi
+    else
+        echo "  ℹ️  nmap no instalado (instala: sudo apt install nmap)"
+        echo "  💡 Puedes instalar nmap y volver a intentarlo"
+    fi
+    
+    # ============================================================
+    # SI SE ENCONTRARON IMPRESORAS, OFRECER INSTALAR
+    # ============================================================
+    
+    if [ -n "$FOUND_IPS" ]; then
+        echo ""
+        echo -e "${GREEN}📋 Impresoras encontradas:${RESET}"
+        
+        # Guardar IPs en un array
+        IP_LIST=($FOUND_IPS)
+        
+        for i in "${!IP_LIST[@]}"; do
+            IP="${IP_LIST[$i]}"
+            # Intentar obtener el nombre
+            NAME=$(curl -s "http://$IP:631/printers/" 2>/dev/null | grep -oP '(?<=<title>).*?(?=</title>)' | head -1)
+            if [ -n "$NAME" ]; then
+                echo "  $((i+1))) $IP - $NAME"
+            else
+                echo "  $((i+1))) $IP - (nombre no disponible)"
+            fi
+        done
+        
+        echo ""
+        echo -e "${BLUE}🔧 ¿Qué deseas hacer?${RESET}"
+        echo "  1) Instalar una de estas impresoras"
+        echo "  2) Salir sin instalar"
+        read -p "Opción (1-2): " INSTALL_OPTION
+        
+        if [ "$INSTALL_OPTION" = "1" ]; then
+            echo ""
+            read -p "Número de impresora a instalar (1-${#IP_LIST[@]}): " NUM
+            if [ "$NUM" -ge 1 ] && [ "$NUM" -le ${#IP_LIST[@]} ]; then
+                IP="${IP_LIST[$((NUM-1))]}"
+                read -p "Nombre para la impresora (ej: Oficina, Color, etc.): " PRINTER_NAME
+                if [ -z "$PRINTER_NAME" ]; then
+                    PRINTER_NAME="Imp_$IP"
+                fi
+                
+                echo ""
+                echo "🔧 Instalando impresora $PRINTER_NAME en $IP..."
+                
+                # Intentar instalar con IPP
+                sudo lpadmin -p "$PRINTER_NAME" -E -v "ipp://$IP/ipp/print" -m everywhere 2>/dev/null
+                
+                if [ $? -eq 0 ]; then
+                    echo -e "  ${GREEN}✅ Impresora $PRINTER_NAME instalada correctamente${RESET}"
+                    echo "  🔧 Configurando como predeterminada..."
+                    lpoptions -d "$PRINTER_NAME" 2>/dev/null
+                    echo -e "  ${GREEN}✅ $PRINTER_NAME configurada como predeterminada${RESET}"
+                else
+                    echo -e "  ${RED}❌ Error al instalar la impresora${RESET}"
+                    echo "  💡 Intenta manualmente con una de estas opciones:"
+                    echo "    sudo lpadmin -p $PRINTER_NAME -E -v ipp://$IP/ipp/print -m everywhere"
+                    echo "    sudo lpadmin -p $PRINTER_NAME -E -v socket://$IP:9100 -m everywhere"
+                fi
+            else
+                echo "  ❌ Número inválido"
+            fi
+        fi
+    else
+        echo ""
+        echo -e "  ${YELLOW}⚠️  No se encontraron impresoras en red${RESET}"
+        echo "  💡 Posibles causas:"
+        echo "     • La impresora no está encendida o conectada a la red"
+        echo "     • El firewall está bloqueando el descubrimiento"
+        echo "     • La impresora está en otra subred"
+        echo ""
+        echo "  🔧 Para conectar manualmente:"
+        echo "     • Conecta por USB y selecciona 'Añadir impresora' en Configuración"
+        echo "     • Usa: sudo lpadmin -p <nombre> -E -v <dispositivo> -m <driver>"
+        echo ""
+        echo "  💡 Puedes probar escaneando una red específica:"
+        echo "     192.168.0.0/24  (redes domésticas comunes)"
+        echo "     10.0.0.0/24     (redes de oficina)"
+        echo "     172.16.0.0/24   (redes empresariales)"
+    fi
+}
+
+# ============================================================
+# OTRAS FUNCIONES
+# ============================================================
+
+probar_impresora() {
+    echo -e "${BLUE}🖨️  Selecciona una impresora para probar:${RESET}"
+    PRINTERS=$(lpstat -p 2>/dev/null | grep "printer" | awk '{print $2}')
+    if [ -z "$PRINTERS" ]; then
+        echo "  ❌ No hay impresoras instaladas"
+        return
+    fi
+    
+    echo "$PRINTERS" | nl
+    read -p "Número de impresora: " NUM
+    PRINTER=$(echo "$PRINTERS" | sed -n "${NUM}p")
+    if [ -n "$PRINTER" ]; then
+        echo "  📄 Enviando página de prueba a $PRINTER..."
+        lp -d "$PRINTER" /usr/share/cups/data/testprint.ps 2>/dev/null
+        if [ $? -eq 0 ]; then
+            echo -e "  ${GREEN}✅ Página de prueba enviada${RESET}"
+        else
+            echo -e "  ${RED}❌ Error al enviar página de prueba${RESET}"
+            echo "  💡 Verifica que la impresora esté encendida y conectada"
+        fi
+    else
+        echo "  ❌ Número inválido"
+    fi
+}
+
+cancelar_trabajos() {
+    echo -e "${RED}⚠️  ¿Cancelar todos los trabajos de impresión? (s/N)${RESET}"
+    read -p "Confirmar: " CONFIRM
+    if [[ "$CONFIRM" =~ ^[Ss]$ ]]; then
+        cancel -a 2>/dev/null
+        echo -e "  ${GREEN}✅ Todos los trabajos cancelados${RESET}"
+    else
+        echo "  ℹ️  Operación cancelada"
+    fi
+}
+
+instalar_impresora_manual() {
+    echo -e "${BLUE}🖨️  Instalar impresora manualmente${RESET}"
+    echo "  Formato: sudo lpadmin -p <nombre> -E -v <dispositivo> -m <driver>"
+    echo ""
+    echo "  Ejemplos:"
+    echo "    • USB: sudo lpadmin -p MiImpresora -E -v usb://HP/LaserJet -m everywhere"
+    echo "    • Red (IPP): sudo lpadmin -p MiImpresora -E -v ipp://192.168.0.73/ipp/print -m everywhere"
+    echo "    • Red (JetDirect): sudo lpadmin -p MiImpresora -E -v socket://192.168.0.73:9100 -m everywhere"
+    echo ""
+    read -p "Introduce el comando completo: " CMD
+    if [ -n "$CMD" ]; then
+        eval "$CMD"
+        if [ $? -eq 0 ]; then
+            echo -e "  ${GREEN}✅ Impresora instalada${RESET}"
+        else
+            echo -e "  ${RED}❌ Error al instalar impresora${RESET}"
+        fi
+    fi
+}
+
+# ============================================================
+# MENÚ PRINCIPAL
+# ============================================================
+
+while true; do
+    echo -e "${BLUE}🔧 ¿Qué deseas hacer?${RESET}"
+    echo "  1) Ver estado de CUPS e impresoras"
+    echo "  2) Activar CUPS (si está inactivo)"
+    echo "  3) Habilitar CUPS para inicio automático"
+    echo "  4) Activar una impresora deshabilitada"
+    echo "  5) Reiniciar CUPS"
+    echo "  6) Ver logs de CUPS"
+    echo "  7) Reparar problemas automáticamente"
+    echo "  8) Buscar e instalar impresoras en red"
+    echo "  9) Instalar impresora manualmente"
+    echo "  10) Enviar página de prueba"
+    echo "  11) Cancelar todos los trabajos"
+    echo "  12) Salir"
+    echo
+    read -p "Opción (1-12): " OPCION
+
+    case $OPCION in
+        1)
+            check_cups_status
+            list_printers
+            check_default_printer
+            check_print_jobs
+            diagnose_problems
+            ;;
+        2)
+            echo "🔄 Activando CUPS..."
+            sudo systemctl start cups
+            if systemctl is-active --quiet cups; then
+                echo -e "  ${GREEN}✅ CUPS activado${RESET}"
+            else
+                echo -e "  ${RED}❌ Error al activar CUPS${RESET}"
+            fi
+            ;;
+        3)
+            echo "🔗 Habilitando CUPS para inicio automático..."
+            sudo systemctl enable cups
+            if systemctl is-enabled cups | grep -q "enabled"; then
+                echo -e "  ${GREEN}✅ CUPS habilitado${RESET}"
+            else
+                echo -e "  ${RED}❌ Error al habilitar CUPS${RESET}"
+            fi
+            ;;
+        4)
+            echo "🖨️  Impresoras deshabilitadas:"
+            DISABLED=$(lpstat -p 2>/dev/null | grep "disabled" | awk '{print $2}')
+            if [ -n "$DISABLED" ]; then
+                echo "$DISABLED" | nl
+                read -p "Número de impresora a activar: " NUM
+                PRINTER=$(echo "$DISABLED" | sed -n "${NUM}p")
+                if [ -n "$PRINTER" ]; then
+                    echo "🔧 Activando $PRINTER..."
+                    sudo cupsenable "$PRINTER"
+                    echo -e "  ${GREEN}✅ $PRINTER activada${RESET}"
+                else
+                    echo "❌ Número inválido"
+                fi
+            else
+                echo "  ℹ️  No hay impresoras deshabilitadas"
+            fi
+            ;;
+        5)
+            echo "🔄 Reiniciando CUPS..."
+            sudo systemctl restart cups
+            if systemctl is-active --quiet cups; then
+                echo -e "  ${GREEN}✅ CUPS reiniciado${RESET}"
+            else
+                echo -e "  ${RED}❌ Error al reiniciar CUPS${RESET}"
+            fi
+            ;;
+        6)
+            echo "📋 Logs de CUPS:"
+            sudo journalctl -u cups -n 20 --no-pager
+            ;;
+        7)
+            echo "🔧 Reparando problemas automáticamente..."
+            if ! systemctl is-active --quiet cups; then
+                echo "  🔄 Activando CUPS..."
+                sudo systemctl start cups
+            fi
+            if ! systemctl is-enabled cups | grep -q "enabled"; then
+                echo "  🔄 Habilitando CUPS..."
+                sudo systemctl enable cups
+            fi
+            DISABLED=$(lpstat -p 2>/dev/null | grep "disabled" | awk '{print $2}')
+            if [ -n "$DISABLED" ]; then
+                echo "$DISABLED" | while read printer; do
+                    echo "  🔄 Activando $printer..."
+                    sudo cupsenable "$printer"
+                done
+            fi
+            echo "  🔄 Reiniciando CUPS..."
+            sudo systemctl restart cups
+            echo -e "  ${GREEN}✅ Reparación completada${RESET}"
+            ;;
+        8)
+            buscar_impresoras
+            ;;
+        9)
+            instalar_impresora_manual
+            ;;
+        10)
+            probar_impresora
+            ;;
+        11)
+            cancelar_trabajos
+            ;;
+        12)
+            echo "Saliendo..."
+            exit 0
+            ;;
+        *)
+            error "Opción inválida"
+            ;;
+    esac
+    
+    echo
+    read -p "Presiona Enter para continuar..."
+    clear
+done
