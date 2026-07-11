@@ -33,247 +33,387 @@ export ALFREDO_BASE="$BASE"
 print_header() {
     clear
     echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${CYAN}${BOLD}║    ALFREDO TOOLS v1.0  /  Suite de Diagnóstico y Mantenimiento        ║${RESET}"
+    echo -e "${CYAN}${BOLD}║    ALFREDO TOOLS v2.0  /  Suite de Diagnóstico y Mantenimiento        ║${RESET}"
     echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════════════════════════════════╝${RESET}"
     echo ""
 }
 
-print_category() {
-    echo -e "${YELLOW}${BOLD}█▓▒░ $1 ░▒▓█${RESET}"
+print_menu_header() {
+    echo -e "${YELLOW}${BOLD}═══════════════════════════════════════════════════════════════════════${RESET}"
+    echo -e "${BOLD}  $1${RESET}"
+    echo -e "${YELLOW}${BOLD}═══════════════════════════════════════════════════════════════════════${RESET}"
+    echo ""
 }
 
-get_description() {
+print_option() {
+    printf "  ${GREEN}%2s${RESET}) %s\n" "$1" "$2"
+}
+
+print_back_option() {
+    echo ""
+    printf "  ${YELLOW}%2s${RESET}) %s\n" "0" "Regresar al menú principal"
+}
+
+print_exit_option() {
+    echo ""
+    printf "  ${RED}%2s${RESET}) %s\n" "0" "Salir"
+    echo ""
+}
+
+pause() {
+    echo ""
+    read -p "Presiona Enter para continuar..."
+}
+
+# ============================================================
+# EJECUTAR MÓDULO
+# ============================================================
+run_module() {
     local module="$1"
-    local desc=""
+    local module_path="$BASE/modules/$module"
     
-    if [ -f "$BASE/modules/$module" ]; then
-        desc=$(tail -n +2 "$BASE/modules/$module" | \
-            grep -v "^#" | \
-            grep -E "^#[[:space:]]" | \
-            head -1 | \
-            sed 's/^# //' | \
-            sed 's/^#//' | \
-            sed 's/^[[:space:]]*//' | \
-            sed 's/[[:space:]]*$//')
+    if [ ! -f "$module_path" ]; then
+        echo -e "${RED}❌ Error:${RESET} Módulo '$module' no encontrado"
+        pause
+        return 1
     fi
     
-    if [ -n "$desc" ]; then
-        desc=$(echo "$desc" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
-        if [ ${#desc} -gt 32 ]; then
-            desc="${desc:0:30}..."
-        fi
+    if [ ! -x "$module_path" ]; then
+        echo -e "${YELLOW}⚠️  El módulo '$module' no es ejecutable${RESET}"
+        pause
+        return 1
     fi
     
-    if [ -z "$desc" ] || [ ${#desc} -lt 4 ] || echo "$desc" | grep -qiE "funcion|diagnostico|configuracion|analisis|sistema|informacion|monitoreo"; then
-        case "$module" in
-            "diagnostico") desc="Diagnóstico completo" ;;
-            "diagnostico-memoria") desc="Diagnóstico de memoria" ;;
-            "analizar-logs") desc="Análisis de logs" ;;
-            "estado-actual") desc="Estado en tiempo real" ;;
-            "verificar-todo") desc="Verificación completa" ;;
-            "salud") desc="Estado del sistema" ;;
-            "info") desc="Resumen rápido" ;;
-            "procesador") desc="Info del CPU" ;;
-            "memoria") desc="Info de RAM" ;;
-            "discos") desc="Info de discos" ;;
-            "smart-diagnostico") desc="Diagnóstico SMART" ;;
-            "nvme-status") desc="Estado del NVMe" ;;
-            "tiempo-arranque") desc="Tiempo de arranque" ;;
-            "ultimo-arranque") desc="Último arranque" ;;
-            "reparar") desc="Reparación automática" ;;
-            "reparar-todo") desc="Reparación completa" ;;
-            "fix-amd") desc="Solución para AMD" ;;
-            "fix-audio") desc="Solución de audio" ;;
-            "fix-pipewire") desc="Reparación PipeWire" ;;
-            "fix-pulse") desc="Reparación PulseAudio" ;;
-            "fix-hdmi") desc="Solución HDMI" ;;
-            "fix-screen") desc="Solución pantalla negra" ;;
-            "screen-fix-quick") desc="Solución rápida" ;;
-            "fix-speed") desc="Reparación speed test" ;;
-            "fix-screen-duplicates") desc="Reparar procesos" ;;
-            "fix-screen-lxqt") desc="Reparar pantalla LXQt" ;;
-            "red") desc="Configuración de red" ;;
-            "wifi") desc="Información WiFi" ;;
-            "speed") desc="Velocidad de Internet" ;;
-            "temp-cpu") desc="Temperatura CPU" ;;
-            "temp-discos") desc="Temperatura discos" ;;
-            "temp-discos-simple") desc="Temperatura simple" ;;
-            "check-audio") desc="Verificación de audio" ;;
-            "configurar-audio") desc="Configuración de audio" ;;
-            "monitor-audio") desc="Monitoreo de audio" ;;
-            "test-audio") desc="Prueba de audio" ;;
-            "setup-monitors") desc="Configurar monitores" ;;
-            "monitor-screen") desc="Monitoreo de pantallas" ;;
-            "pantalla-negra") desc="Soluciones pantalla negra" ;;
-            "monitor-gui") desc="Monitorear GUI" ;;
-            "optimizar-arranque") desc="Optimizar arranque" ;;
-            "optimizar-memoria") desc="Optimizar memoria" ;;
-            "optimizar-soldada") desc="Optimizar soldada" ;;
-            "impresoras") desc="Diagnóstico de impresoras" ;;
-            "historial") desc="Historial de reparaciones" ;;
-            "resumen-ejecutivo") desc="Resumen ejecutivo" ;;
-            "mac-info") desc="Información MacBook" ;;
-            *) desc="Módulo" ;;
+    clear
+    exec "$module_path"
+}
+
+# ============================================================
+# SUBMENÚES
+# ============================================================
+
+submenu_diagnostico() {
+    while true; do
+        print_header
+        print_menu_header "🔍 DIAGNÓSTICO"
+        echo "  Selecciona una opción:"
+        echo ""
+        print_option "1" "diagnostico       - Diagnóstico completo del sistema"
+        print_option "2" "diagnostico-memoria - Diagnóstico de memoria RAM"
+        print_option "3" "analizar-logs     - Análisis de logs del sistema"
+        print_option "4" "estado-actual     - Estado del sistema en tiempo real"
+        print_option "5" "verificar-todo    - Verificación completa del sistema"
+        print_back_option
+        echo ""
+        read -p "Opción: " OPTION
+        
+        case $OPTION in
+            1) run_module "diagnostico" ;;
+            2) run_module "diagnostico-memoria" ;;
+            3) run_module "analizar-logs" ;;
+            4) run_module "estado-actual" ;;
+            5) run_module "verificar-todo" ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Opción inválida${RESET}" ; pause ;;
         esac
-    fi
-    
-    echo "$desc"
-}
-
-print_two_columns() {
-    local modules=("$@")
-    local half=$(( (${#modules[@]} + 1) / 2 ))
-    
-    for ((i=0; i<half; i++)); do
-        local idx1=$i
-        local idx2=$((i + half))
-        
-        local name1=""
-        local desc1=""
-        if [ $idx1 -lt ${#modules[@]} ]; then
-            name1="${modules[$idx1]}"
-            desc1=$(get_description "$name1")
-        fi
-        
-        local name2=""
-        local desc2=""
-        if [ $idx2 -lt ${#modules[@]} ]; then
-            name2="${modules[$idx2]}"
-            desc2=$(get_description "$name2")
-        fi
-        
-        if [ -n "$name1" ] && [ -n "$name2" ]; then
-            printf "  ${GREEN}▶${RESET} ${BOLD}%-18s${RESET} %-25s  ${GREEN}▶${RESET} ${BOLD}%-18s${RESET} %s\n" \
-                "$name1" "${desc1:0:25}" "$name2" "${desc2:0:25}"
-        elif [ -n "$name1" ]; then
-            printf "  ${GREEN}▶${RESET} ${BOLD}%-18s${RESET} %s\n" "$name1" "$desc1"
-        fi
     done
-    echo ""
 }
 
-print_footer() {
-    local total_modules=$(ls -1 "$BASE/modules/" 2>/dev/null | wc -l)
-    echo -e "${DIM}───────────────────────────────────────────────────────────────────────────────${RESET}"
-    echo -e "${CYAN}📦 Módulos disponibles:${RESET} ${BOLD}$total_modules${RESET}"
-    echo -e "${CYAN}💡 Uso:${RESET} ${BOLD}alfredo <módulo>${RESET}  ${DIM}Ejemplo:${RESET} ${BOLD}alfredo salud${RESET}"
-    echo -e "${CYAN}📖 Ayuda:${RESET} ${BOLD}alfredo help${RESET}  ${DIM}o${RESET} ${BOLD}alfredo --help${RESET}"
-    echo ""
+submenu_sistema() {
+    while true; do
+        print_header
+        print_menu_header "💻 SISTEMA"
+        echo "  Selecciona una opción:"
+        echo ""
+        print_option "1" "salud             - Estado completo del sistema"
+        print_option "2" "info              - Resumen rápido del sistema"
+        print_option "3" "procesador        - Información del procesador"
+        print_option "4" "memoria           - Información de la memoria RAM"
+        print_option "5" "discos            - Información de discos"
+        print_option "6" "smart-diagnostico - Diagnóstico SMART de discos"
+        print_option "7" "nvme-status       - Estado del disco NVMe"
+        print_option "8" "tiempo-arranque   - Tiempo de arranque del sistema"
+        print_option "9" "ultimo-arranque   - Información del último arranque"
+        print_back_option
+        echo ""
+        read -p "Opción: " OPTION
+        
+        case $OPTION in
+            1) run_module "salud" ;;
+            2) run_module "info" ;;
+            3) run_module "procesador" ;;
+            4) run_module "memoria" ;;
+            5) run_module "discos" ;;
+            6) run_module "smart-diagnostico" ;;
+            7) run_module "nvme-status" ;;
+            8) run_module "tiempo-arranque" ;;
+            9) run_module "ultimo-arranque" ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Opción inválida${RESET}" ; pause ;;
+        esac
+    done
+}
+
+submenu_reparacion() {
+    while true; do
+        print_header
+        print_menu_header "🔧 REPARACIÓN"
+        echo "  Selecciona una opción:"
+        echo ""
+        print_option "1" "reparar           - Reparación automática de problemas"
+        print_option "2" "reparar-todo      - Reparación completa del sistema"
+        print_option "3" "fix-amd           - Solución específica para AMD"
+        print_option "4" "fix-audio         - Solución de problemas de audio"
+        print_option "5" "fix-pipewire      - Reparación completa de PipeWire"
+        print_option "6" "fix-pulse         - Reparación de conexión PulseAudio"
+        print_option "7" "fix-hdmi          - Solución de problemas HDMI"
+        print_option "8" "fix-screen        - Solución de pantalla negra"
+        print_option "9" "screen-fix-quick  - Solución rápida de pantalla negra"
+        print_option "10" "fix-speed        - Reparación de speed test"
+        print_option "11" "fix-screen-duplicates - Reparar procesos duplicados"
+        print_option "12" "fix-screen-lxqt  - Reparar pantalla LXQt"
+        print_back_option
+        echo ""
+        read -p "Opción: " OPTION
+        
+        case $OPTION in
+            1) run_module "reparar" ;;
+            2) run_module "reparar-todo" ;;
+            3) run_module "fix-amd" ;;
+            4) run_module "fix-audio" ;;
+            5) run_module "fix-pipewire" ;;
+            6) run_module "fix-pulse" ;;
+            7) run_module "fix-hdmi" ;;
+            8) run_module "fix-screen" ;;
+            9) run_module "screen-fix-quick" ;;
+            10) run_module "fix-speed" ;;
+            11) run_module "fix-screen-duplicates" ;;
+            12) run_module "fix-screen-lxqt" ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Opción inválida${RESET}" ; pause ;;
+        esac
+    done
+}
+
+submenu_red() {
+    while true; do
+        print_header
+        print_menu_header "🌐 RED Y CONECTIVIDAD"
+        echo "  Selecciona una opción:"
+        echo ""
+        print_option "1" "red   - Configuración de red"
+        print_option "2" "wifi  - Información WiFi"
+        print_option "3" "speed - Velocidad de Internet"
+        print_back_option
+        echo ""
+        read -p "Opción: " OPTION
+        
+        case $OPTION in
+            1) run_module "red" ;;
+            2) run_module "wifi" ;;
+            3) run_module "speed" ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Opción inválida${RESET}" ; pause ;;
+        esac
+    done
+}
+
+submenu_temperatura() {
+    while true; do
+        print_header
+        print_menu_header "🌡️  TEMPERATURA"
+        echo "  Selecciona una opción:"
+        echo ""
+        print_option "1" "temp-cpu           - Temperatura de la CPU"
+        print_option "2" "temp-discos        - Temperatura de discos"
+        print_option "3" "temp-discos-simple - Temperatura de discos (simple)"
+        print_back_option
+        echo ""
+        read -p "Opción: " OPTION
+        
+        case $OPTION in
+            1) run_module "temp-cpu" ;;
+            2) run_module "temp-discos" ;;
+            3) run_module "temp-discos-simple" ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Opción inválida${RESET}" ; pause ;;
+        esac
+    done
+}
+
+submenu_audio() {
+    while true; do
+        print_header
+        print_menu_header "🔊 AUDIO"
+        echo "  Selecciona una opción:"
+        echo ""
+        print_option "1" "check-audio       - Verificación rápida de audio"
+        print_option "2" "configurar-audio  - Configuración de audio"
+        print_option "3" "monitor-audio     - Monitoreo de audio en tiempo real"
+        print_option "4" "test-audio        - Prueba de audio"
+        print_back_option
+        echo ""
+        read -p "Opción: " OPTION
+        
+        case $OPTION in
+            1) run_module "check-audio" ;;
+            2) run_module "configurar-audio" ;;
+            3) run_module "monitor-audio" ;;
+            4) run_module "test-audio" ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Opción inválida${RESET}" ; pause ;;
+        esac
+    done
+}
+
+submenu_pantallas() {
+    while true; do
+        print_header
+        print_menu_header "🖥️  PANTALLAS Y GRÁFICOS"
+        echo "  Selecciona una opción:"
+        echo ""
+        print_option "1" "setup-monitors   - Configurar monitores"
+        print_option "2" "monitor-screen   - Monitorear cambios en pantallas"
+        print_option "3" "pantalla-negra   - Soluciones para pantalla negra"
+        print_back_option
+        echo ""
+        read -p "Opción: " OPTION
+        
+        case $OPTION in
+            1) run_module "setup-monitors" ;;
+            2) run_module "monitor-screen" ;;
+            3) run_module "pantalla-negra" ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Opción inválida${RESET}" ; pause ;;
+        esac
+    done
+}
+
+submenu_optimizacion() {
+    while true; do
+        print_header
+        print_menu_header "🚀 OPTIMIZACIÓN"
+        echo "  Selecciona una opción:"
+        echo ""
+        print_option "1" "optimizar-arranque - Optimizar tiempo de arranque"
+        print_option "2" "optimizar-memoria  - Optimizar memoria"
+        print_option "3" "optimizar-soldada  - Optimizar memoria soldada"
+        print_back_option
+        echo ""
+        read -p "Opción: " OPTION
+        
+        case $OPTION in
+            1) run_module "optimizar-arranque" ;;
+            2) run_module "optimizar-memoria" ;;
+            3) run_module "optimizar-soldada" ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Opción inválida${RESET}" ; pause ;;
+        esac
+    done
+}
+
+submenu_impresoras() {
+    while true; do
+        print_header
+        print_menu_header "🖨️  IMPRESORAS"
+        echo "  Selecciona una opción:"
+        echo ""
+        print_option "1" "impresoras - Diagnóstico de impresoras"
+        print_back_option
+        echo ""
+        read -p "Opción: " OPTION
+        
+        case $OPTION in
+            1) run_module "impresoras" ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Opción inválida${RESET}" ; pause ;;
+        esac
+    done
+}
+
+submenu_otros() {
+    while true; do
+        print_header
+        print_menu_header "📊 OTROS"
+        echo "  Selecciona una opción:"
+        echo ""
+        print_option "1" "historial         - Historial de reparaciones"
+        print_option "2" "resumen-ejecutivo - Resumen ejecutivo del sistema"
+        print_option "3" "mac-info          - Información de MacBook"
+        print_back_option
+        echo ""
+        read -p "Opción: " OPTION
+        
+        case $OPTION in
+            1) run_module "historial" ;;
+            2) run_module "resumen-ejecutivo" ;;
+            3) run_module "mac-info" ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Opción inválida${RESET}" ; pause ;;
+        esac
+    done
 }
 
 # ============================================================
 # MENÚ PRINCIPAL
 # ============================================================
-show_menu() {
-    print_header
-    
-    print_category "🔍 DIAGNÓSTICO"
-    MODULES=()
-    for m in diagnostico diagnostico-memoria analizar-logs estado-actual verificar-todo; do
-        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
+show_main_menu() {
+    while true; do
+        print_header
+        print_menu_header "📋 MENÚ PRINCIPAL"
+        echo "  Selecciona una categoría:"
+        echo ""
+        print_option "1" "🔍 Diagnóstico"
+        print_option "2" "💻 Sistema"
+        print_option "3" "🔧 Reparación"
+        print_option "4" "🌐 Red y Conectividad"
+        print_option "5" "🌡️  Temperatura"
+        print_option "6" "🔊 Audio"
+        print_option "7" "🖥️  Pantallas y Gráficos"
+        print_option "8" "🚀 Optimización"
+        print_option "9" "🖨️  Impresoras"
+        print_option "10" "📊 Otros"
+        echo ""
+        print_exit_option
+        echo ""
+        read -p "Opción: " MAIN_OPTION
+        
+        case $MAIN_OPTION in
+            1) submenu_diagnostico ;;
+            2) submenu_sistema ;;
+            3) submenu_reparacion ;;
+            4) submenu_red ;;
+            5) submenu_temperatura ;;
+            6) submenu_audio ;;
+            7) submenu_pantallas ;;
+            8) submenu_optimizacion ;;
+            9) submenu_impresoras ;;
+            10) submenu_otros ;;
+            0) 
+                echo -e "\n${GREEN}👋 ¡Hasta luego!${RESET}"
+                exit 0
+                ;;
+            *) 
+                echo -e "${RED}❌ Opción inválida${RESET}" 
+                pause 
+                ;;
+        esac
     done
-    print_two_columns "${MODULES[@]}"
-    
-    print_category "💻 SISTEMA"
-    MODULES=()
-    for m in salud info procesador memoria discos smart-diagnostico nvme-status tiempo-arranque ultimo-arranque; do
-        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
-    done
-    print_two_columns "${MODULES[@]}"
-    
-    print_category "🔧 REPARACIÓN"
-    MODULES=()
-    for m in reparar reparar-todo fix-amd fix-audio fix-pipewire fix-pulse fix-hdmi fix-screen screen-fix-quick fix-speed fix-screen-duplicates fix-screen-lxqt; do
-        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
-    done
-    print_two_columns "${MODULES[@]}"
-    
-    print_category "🌐 RED Y CONECTIVIDAD"
-    MODULES=()
-    for m in red wifi speed; do
-        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
-    done
-    print_two_columns "${MODULES[@]}"
-    
-    print_category "🌡️  TEMPERATURA"
-    MODULES=()
-    for m in temp-cpu temp-discos temp-discos-simple; do
-        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
-    done
-    print_two_columns "${MODULES[@]}"
-    
-    print_category "🔊 AUDIO"
-    MODULES=()
-    for m in check-audio configurar-audio monitor-audio test-audio; do
-        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
-    done
-    print_two_columns "${MODULES[@]}"
-    
-    print_category "🖥️  PANTALLAS Y GRÁFICOS"
-    MODULES=()
-    for m in setup-monitors monitor-screen pantalla-negra monitor-gui; do
-        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
-    done
-    print_two_columns "${MODULES[@]}"
-    
-    print_category "🚀 OPTIMIZACIÓN"
-    MODULES=()
-    for m in optimizar-arranque optimizar-memoria optimizar-soldada; do
-        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
-    done
-    print_two_columns "${MODULES[@]}"
-    
-    print_category "🖨️  IMPRESORAS"
-    MODULES=()
-    for m in impresoras; do
-        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
-    done
-    print_two_columns "${MODULES[@]}"
-    
-    print_category "📊 OTROS"
-    MODULES=()
-    for m in historial resumen-ejecutivo mac-info; do
-        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
-    done
-    print_two_columns "${MODULES[@]}"
-    
-    print_footer
 }
 
 # ============================================================
-# VERIFICAR Y EJECUTAR MÓDULO
+# EJECUCIÓN DIRECTA (compatibilidad con comandos)
 # ============================================================
-check_module() {
-    local module="$1"
-    local module_path="$BASE/modules/$module"
-    
-    if [ ! -f "$module_path" ]; then
-        echo -e "${RED}❌ Error:${RESET} Módulo '${BOLD}$module${RESET}' no encontrado"
-        echo -e "${CYAN}💡${RESET} Ejecuta ${BOLD}alfredo${RESET} para ver los módulos disponibles"
+if [ $# -gt 0 ] && [ "$1" != "help" ] && [ "$1" != "--help" ] && [ "$1" != "-h" ]; then
+    # Ejecución directa de módulo
+    if [ -f "$BASE/modules/$1" ]; then
+        exec "$BASE/modules/$1"
+    else
+        echo -e "${RED}❌ Error:${RESET} Módulo '${BOLD}$1${RESET}' no encontrado"
+        echo -e "${CYAN}💡${RESET} Ejecuta ${BOLD}alfredo${RESET} para ver el menú interactivo"
         exit 1
     fi
-    
-    if [ ! -x "$module_path" ]; then
-        echo -e "${YELLOW}⚠️  El módulo '${BOLD}$module${RESET}' no es ejecutable"
-        echo -e "${CYAN}💡${RESET} Ejecuta: ${BOLD}chmod +x $module_path${RESET}"
-        exit 1
-    fi
-    
-    exec "$module_path"
-}
-
-# ============================================================
-# CASOS PRINCIPALES
-# ============================================================
-if [ $# -eq 0 ] || [ "$1" = "help" ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
-    show_menu
-    exit 0
-fi
-
-if [ -f "$BASE/modules/$1" ]; then
-    check_module "$1"
 else
-    echo -e "${RED}❌ Error:${RESET} Módulo '${BOLD}$1${RESET}' no encontrado"
-    echo -e "${CYAN}💡${RESET} Ejecuta ${BOLD}alfredo${RESET} para ver los módulos disponibles"
-    exit 1
+    # Modo interactivo
+    show_main_menu
 fi
