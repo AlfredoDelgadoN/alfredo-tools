@@ -15,138 +15,6 @@ DIM='\033[2m'
 RESET='\033[0m'
 
 # ============================================================
-# FUNCIONES DE PRESENTACIÓN
-# ============================================================
-print_header() {
-    clear
-    echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${CYAN}${BOLD}║    ALFREDO TOOLS v1.0  /  Suite de Diagnóstico y Mantenimiento        ║${RESET}"
-    echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════════════════════════════════╝${RESET}"
-    echo ""
-}
-
-print_category() {
-    echo -e "${YELLOW}${BOLD}█▓▒░ $1 ░▒▓█${RESET}"
-    # Eliminar la línea en blanco después de la categoría
-}
-
-print_two_columns() {
-    local modules=("$@")
-    local half=$(( (${#modules[@]} + 1) / 2 ))
-    
-    for ((i=0; i<half; i++)); do
-        local idx1=$i
-        local idx2=$((i + half))
-        
-        # Primera columna
-        local name1=""
-        local desc1=""
-        if [ $idx1 -lt ${#modules[@]} ]; then
-            name1="${modules[$idx1]}"
-            desc1=$(get_description "$name1")
-        fi
-        
-        # Segunda columna
-        local name2=""
-        local desc2=""
-        if [ $idx2 -lt ${#modules[@]} ]; then
-            name2="${modules[$idx2]}"
-            desc2=$(get_description "$name2")
-        fi
-        
-        # Imprimir en dos columnas
-        if [ -n "$name1" ] && [ -n "$name2" ]; then
-            printf "  ${GREEN}▶${RESET} ${BOLD}%-19s${RESET} %-26s  ${GREEN}▶${RESET} ${BOLD}%-18s${RESET} %s\n" \
-                "$name1" "${desc1:0:26}" "$name2" "${desc2:0:26}"
-        elif [ -n "$name1" ]; then
-            printf "  ${GREEN}▶${RESET} ${BOLD}%-18s${RESET} %s\n" "$name1" "$desc1"
-        fi
-    done
-}
-
-get_description() {
-    local module="$1"
-    local desc=""
-    
-    case "$module" in
-        # Diagnóstico
-        "diagnostico") desc="Diagnóstico completo" ;;
-        "diagnostico-memoria") desc="Diagnóstico RAM" ;;
-        "analizar-logs") desc=" Análisis de logs" ;;
-        "estado-actual") desc="Estado en tiempo real" ;;
-        "verificar-todo") desc="Verificación completa" ;;
-        "smart-diagnostico") desc="S.M.A.R.T. de discos" ;;
-        
-        # Sistema
-        "salud") desc="Estado del sistema" ;;
-        "info ") desc="Resumen rápido" ;;
-        "procesador") desc="Información del CPU" ;;
-        "memoria") desc="Información de RAM" ;;
-        "discos") desc="Ver los discos.." ;;
-        "nvme-status") desc="Estado del NVMe" ;;
-        "tiempo-arranque") desc="Tiempo de arranque" ;;
-        "ultimo-arranque") desc="Último arranque" ;;
-        
-        # Reparación
-        "reparar") desc="Reparación automática" ;;
-        "reparar-todo") desc="Reparación completa" ;;
-        "fix-amd") desc="Solución para AMD" ;;
-        "fix-audio") desc="Solución de audio" ;;
-        "fix-pipewire") desc="Reparación PipeWire" ;;
-        "fix-pulse") desc="Reparación PulseAudio" ;;
-        "fix-hdmi") desc="Solución HDMI" ;;
-        "fix-screen") desc="Solución pantalla negra" ;;
-        "screen-fix-quick") desc="Solución rápida" ;;
-        "fix-speed") desc="Reparación speed test" ;;
-        
-        # Red
-        "red") desc="Configuración de red" ;;
-        "wifi") desc="Información WiFi" ;;
-        "speed") desc="Velocidad de Internet" ;;
-        "impresora") desc="Test, reparacion, etc" ;;
-        
-        # Temperatura
-        "temp-cpu") desc="Temperatura CPU" ;;
-        "temp-discos") desc="Temperatura discos" ;;
-        "temp-discos-simple") desc="Temperatura simple" ;;
-        
-        # Audio
-        "check-audio") desc="Verificación de audio" ;;
-        "configurar-audio") desc="Configuración de audio" ;;
-        "monitor-audio") desc="Monitoreo de audio" ;;
-        "test-audio") desc="Prueba de audio" ;;
-        
-        # Pantallas
-        "setup-monitors") desc="Configurar monitores" ;;
-        "monitor-screen") desc="Monitoreo de pantallas" ;;
-        "pantalla-negra") desc="Soluciones pantalla negra" ;;
-        
-        # Optimización
-        "optimizar-arranque") desc="Optimizar arranque" ;;
-        "optimizar-memoria") desc="Optimizar memoria" ;;
-        "optimizar-soldada") desc="Optimizar soldada" ;;
-        
-        # Otros
-        "historial") desc="Historial de reparaciones" ;;
-        "resumen-ejecutivo") desc="Resumen ejecutivo" ;;
-        "mac-info") desc="Información MacBook" ;;
-        
-        *) desc="Sin descripción" ;;
-    esac
-    
-    echo "$desc"
-}
-
-print_footer() {
-    local total_modules=$(ls -1 "$BASE/modules/" 2>/dev/null | wc -l)
-    echo -e "${DIM}───────────────────────────────────────────────────────────────────────────────${RESET}"
-    echo -e "${CYAN}📦 Módulos disponibles:${RESET} ${BOLD}$total_modules${RESET}"
-    echo -e "${CYAN}💡 Uso:${RESET} ${BOLD}alfredo <módulo>${RESET}  ${DIM}Ejemplo:${RESET} ${BOLD}alfredo salud${RESET}"
-    echo -e "${CYAN}📖 Ayuda:${RESET} ${BOLD}alfredo help${RESET}  ${DIM}o${RESET} ${BOLD}alfredo --help${RESET}"
-    echo ""
-}
-
-# ============================================================
 # DETECTAR RUTA BASE
 # ============================================================
 if [ -L "$0" ]; then
@@ -160,81 +28,214 @@ BASE="$(cd "$BIN_DIR/.." && pwd)"
 export ALFREDO_BASE="$BASE"
 
 # ============================================================
-# MENÚ PRINCIPAL CON DOS COLUMNAS
+# FUNCIONES DE PRESENTACIÓN
+# ============================================================
+print_header() {
+    clear
+    echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════════════════════════════════╗${RESET}"
+    echo -e "${CYAN}${BOLD}║    ALFREDO TOOLS v1.0  /  Suite de Diagnóstico y Mantenimiento        ║${RESET}"
+    echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════════════════════════════════╝${RESET}"
+    echo ""
+}
+
+print_category() {
+    echo -e "${YELLOW}${BOLD}█▓▒░ $1 ░▒▓█${RESET}"
+}
+
+get_description() {
+    local module="$1"
+    local desc=""
+    
+    if [ -f "$BASE/modules/$module" ]; then
+        desc=$(tail -n +2 "$BASE/modules/$module" | \
+            grep -v "^#" | \
+            grep -E "^#[[:space:]]" | \
+            head -1 | \
+            sed 's/^# //' | \
+            sed 's/^#//' | \
+            sed 's/^[[:space:]]*//' | \
+            sed 's/[[:space:]]*$//')
+    fi
+    
+    if [ -n "$desc" ]; then
+        desc=$(echo "$desc" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+        if [ ${#desc} -gt 32 ]; then
+            desc="${desc:0:30}..."
+        fi
+    fi
+    
+    if [ -z "$desc" ] || [ ${#desc} -lt 4 ] || echo "$desc" | grep -qiE "funcion|diagnostico|configuracion|analisis|sistema|informacion|monitoreo"; then
+        case "$module" in
+            "diagnostico") desc="Diagnóstico completo" ;;
+            "diagnostico-memoria") desc="Diagnóstico de memoria" ;;
+            "analizar-logs") desc="Análisis de logs" ;;
+            "estado-actual") desc="Estado en tiempo real" ;;
+            "verificar-todo") desc="Verificación completa" ;;
+            "salud") desc="Estado del sistema" ;;
+            "info") desc="Resumen rápido" ;;
+            "procesador") desc="Info del CPU" ;;
+            "memoria") desc="Info de RAM" ;;
+            "discos") desc="Info de discos" ;;
+            "smart-diagnostico") desc="Diagnóstico SMART" ;;
+            "nvme-status") desc="Estado del NVMe" ;;
+            "tiempo-arranque") desc="Tiempo de arranque" ;;
+            "ultimo-arranque") desc="Último arranque" ;;
+            "reparar") desc="Reparación automática" ;;
+            "reparar-todo") desc="Reparación completa" ;;
+            "fix-amd") desc="Solución para AMD" ;;
+            "fix-audio") desc="Solución de audio" ;;
+            "fix-pipewire") desc="Reparación PipeWire" ;;
+            "fix-pulse") desc="Reparación PulseAudio" ;;
+            "fix-hdmi") desc="Solución HDMI" ;;
+            "fix-screen") desc="Solución pantalla negra" ;;
+            "screen-fix-quick") desc="Solución rápida" ;;
+            "fix-speed") desc="Reparación speed test" ;;
+            "fix-screen-duplicates") desc="Reparar procesos" ;;
+            "fix-screen-lxqt") desc="Reparar pantalla LXQt" ;;
+            "red") desc="Configuración de red" ;;
+            "wifi") desc="Información WiFi" ;;
+            "speed") desc="Velocidad de Internet" ;;
+            "temp-cpu") desc="Temperatura CPU" ;;
+            "temp-discos") desc="Temperatura discos" ;;
+            "temp-discos-simple") desc="Temperatura simple" ;;
+            "check-audio") desc="Verificación de audio" ;;
+            "configurar-audio") desc="Configuración de audio" ;;
+            "monitor-audio") desc="Monitoreo de audio" ;;
+            "test-audio") desc="Prueba de audio" ;;
+            "setup-monitors") desc="Configurar monitores" ;;
+            "monitor-screen") desc="Monitoreo de pantallas" ;;
+            "pantalla-negra") desc="Soluciones pantalla negra" ;;
+            "monitor-gui") desc="Monitorear GUI" ;;
+            "optimizar-arranque") desc="Optimizar arranque" ;;
+            "optimizar-memoria") desc="Optimizar memoria" ;;
+            "optimizar-soldada") desc="Optimizar soldada" ;;
+            "impresoras") desc="Diagnóstico de impresoras" ;;
+            "historial") desc="Historial de reparaciones" ;;
+            "resumen-ejecutivo") desc="Resumen ejecutivo" ;;
+            "mac-info") desc="Información MacBook" ;;
+            *) desc="Módulo" ;;
+        esac
+    fi
+    
+    echo "$desc"
+}
+
+print_two_columns() {
+    local modules=("$@")
+    local half=$(( (${#modules[@]} + 1) / 2 ))
+    
+    for ((i=0; i<half; i++)); do
+        local idx1=$i
+        local idx2=$((i + half))
+        
+        local name1=""
+        local desc1=""
+        if [ $idx1 -lt ${#modules[@]} ]; then
+            name1="${modules[$idx1]}"
+            desc1=$(get_description "$name1")
+        fi
+        
+        local name2=""
+        local desc2=""
+        if [ $idx2 -lt ${#modules[@]} ]; then
+            name2="${modules[$idx2]}"
+            desc2=$(get_description "$name2")
+        fi
+        
+        if [ -n "$name1" ] && [ -n "$name2" ]; then
+            printf "  ${GREEN}▶${RESET} ${BOLD}%-18s${RESET} %-25s  ${GREEN}▶${RESET} ${BOLD}%-18s${RESET} %s\n" \
+                "$name1" "${desc1:0:25}" "$name2" "${desc2:0:25}"
+        elif [ -n "$name1" ]; then
+            printf "  ${GREEN}▶${RESET} ${BOLD}%-18s${RESET} %s\n" "$name1" "$desc1"
+        fi
+    done
+    echo ""
+}
+
+print_footer() {
+    local total_modules=$(ls -1 "$BASE/modules/" 2>/dev/null | wc -l)
+    echo -e "${DIM}───────────────────────────────────────────────────────────────────────────────${RESET}"
+    echo -e "${CYAN}📦 Módulos disponibles:${RESET} ${BOLD}$total_modules${RESET}"
+    echo -e "${CYAN}💡 Uso:${RESET} ${BOLD}alfredo <módulo>${RESET}  ${DIM}Ejemplo:${RESET} ${BOLD}alfredo salud${RESET}"
+    echo -e "${CYAN}📖 Ayuda:${RESET} ${BOLD}alfredo help${RESET}  ${DIM}o${RESET} ${BOLD}alfredo --help${RESET}"
+    echo ""
+}
+
+# ============================================================
+# MENÚ PRINCIPAL
 # ============================================================
 show_menu() {
     print_header
     
-    # ============================================================
-    # CATEGORÍA: DIAGNÓSTICO
-    # ============================================================
     print_category "🔍 DIAGNÓSTICO"
-    print_two_columns \
-        "diagnostico" "diagnostico-memoria" \
-        "analizar-logs" "estado-actual" \
-        "verificar-todo" "smart-diagnostico"  
-    # ============================================================
-    # CATEGORÍA: SISTEMA
-    # ============================================================
+    MODULES=()
+    for m in diagnostico diagnostico-memoria analizar-logs estado-actual verificar-todo; do
+        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
+    done
+    print_two_columns "${MODULES[@]}"
+    
     print_category "💻 SISTEMA"
-    print_two_columns \
-        "salud" "info" \
-        "procesador" "memoria" \
-        "discos" "nvme-status" \
-        "tiempo-arranque" "ultimo-arranque"    
-    # ============================================================
-    # CATEGORÍA: REPARACIÓN
-    # ============================================================
+    MODULES=()
+    for m in salud info procesador memoria discos smart-diagnostico nvme-status tiempo-arranque ultimo-arranque; do
+        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
+    done
+    print_two_columns "${MODULES[@]}"
+    
     print_category "🔧 REPARACIÓN"
-    print_two_columns \
-        "reparar" "reparar-todo" \
-        "fix-amd" "fix-audio" \
-        "fix-pipewire" "fix-pulse" \
-        "fix-hdmi" "fix-screen" \
-        "screen-fix-quick" "fix-speed"    
-    # ============================================================
-    # CATEGORÍA: RED Y CONECTIVIDAD
-    # ============================================================
+    MODULES=()
+    for m in reparar reparar-todo fix-amd fix-audio fix-pipewire fix-pulse fix-hdmi fix-screen screen-fix-quick fix-speed fix-screen-duplicates fix-screen-lxqt; do
+        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
+    done
+    print_two_columns "${MODULES[@]}"
+    
     print_category "🌐 RED Y CONECTIVIDAD"
-    print_two_columns \
-        "red" "wifi" \
-        "speed" \
-        "impresora"    
-    # ============================================================
-    # CATEGORÍA: TEMPERATURA
-    # ============================================================
+    MODULES=()
+    for m in red wifi speed; do
+        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
+    done
+    print_two_columns "${MODULES[@]}"
+    
     print_category "🌡️  TEMPERATURA"
-    print_two_columns \
-        "temp-cpu" "temp-discos" \
-        "temp-discos-simple"    
-    # ============================================================
-    # CATEGORÍA: AUDIO
-    # ============================================================
+    MODULES=()
+    for m in temp-cpu temp-discos temp-discos-simple; do
+        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
+    done
+    print_two_columns "${MODULES[@]}"
+    
     print_category "🔊 AUDIO"
-    print_two_columns \
-        "check-audio" "configurar-audio" \
-        "monitor-audio" "test-audio"    
-    # ============================================================
-    # CATEGORÍA: PANTALLAS Y GRÁFICOS
-    # ============================================================
+    MODULES=()
+    for m in check-audio configurar-audio monitor-audio test-audio; do
+        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
+    done
+    print_two_columns "${MODULES[@]}"
+    
     print_category "🖥️  PANTALLAS Y GRÁFICOS"
-    print_two_columns \
-        "setup-monitors" "monitor-screen" \
-        "pantalla-negra"    
-    # ============================================================
-    # CATEGORÍA: OPTIMIZACIÓN
-    # ============================================================
+    MODULES=()
+    for m in setup-monitors monitor-screen pantalla-negra monitor-gui; do
+        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
+    done
+    print_two_columns "${MODULES[@]}"
+    
     print_category "🚀 OPTIMIZACIÓN"
-    print_two_columns \
-        "optimizar-arranque" "optimizar-memoria" \
-        "optimizar-soldada"    
-    # ============================================================
-    # CATEGORÍA: OTROS
-    # ============================================================
+    MODULES=()
+    for m in optimizar-arranque optimizar-memoria optimizar-soldada; do
+        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
+    done
+    print_two_columns "${MODULES[@]}"
+    
+    print_category "🖨️  IMPRESORAS"
+    MODULES=()
+    for m in impresoras; do
+        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
+    done
+    print_two_columns "${MODULES[@]}"
+    
     print_category "📊 OTROS"
-    print_two_columns \
-        "historial" "resumen-ejecutivo" \
-        "mac-info"
+    MODULES=()
+    for m in historial resumen-ejecutivo mac-info; do
+        [ -f "$BASE/modules/$m" ] && MODULES+=("$m")
+    done
+    print_two_columns "${MODULES[@]}"
     
     print_footer
 }
@@ -269,7 +270,6 @@ if [ $# -eq 0 ] || [ "$1" = "help" ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; 
     exit 0
 fi
 
-# Verificar si el módulo existe
 if [ -f "$BASE/modules/$1" ]; then
     check_module "$1"
 else
